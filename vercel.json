@@ -3,5 +3,16 @@
   "routes": [
     { "src": "/api/(.*)", "dest": "/api/$1" },
     { "src": "/(.*)", "dest": "https://marden-audit-backend-se9t-aebekmxnt-leo-corbetts-projects.vercel.app/$1" }
+  ],
+  "functions": {
+    "api/**/*.js": {
+      "maxDuration": 60
+    }
+  },
+  "crons": [
+    {
+      "path": "/api/cron/worker",
+      "schedule": "*/5 * * * *"
+    }
   ]
 }
