@@ -1,13 +1,12 @@
 // Direct job processing endpoint
-const { Redis } = require('@upstash/redis');
-const puppeteer = require('puppeteer');
+import { Redis } from '@upstash/redis';
 
 // Simple job queue configuration constants
 const jobPrefix = 'job:';
 const queueKey = 'audit:queue';
 const processingQueueKey = 'audit:processing';
 
-module.exports = async (req, res) => {
+export default async function handler(req, res) {
   // Only allow POST requests for manual triggering
   if (req.method !== 'POST') {
     return res.status(405).json({ 
@@ -142,4 +141,4 @@ module.exports = async (req, res) => {
       timestamp: new Date().toISOString()
     });
   }
-};
+}

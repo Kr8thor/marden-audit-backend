@@ -1,12 +1,12 @@
 // Worker cron job handler for processing SEO audit jobs
-const { default: AuditWorker } = require('../../src/services/worker/index.js');
-const { default: logger } = require('../../src/utils/logger.js');
+import AuditWorker from '../../src/services/worker/index.js';
+import logger from '../../src/utils/logger.js';
 
 /**
  * Vercel Cron Job to process SEO audit jobs from the queue
  * Runs daily (configured in vercel.json)
  */
-module.exports = async function handler(req, res) {
+export default async function handler(req, res) {
   try {
     logger.info('Worker cron job started');
     

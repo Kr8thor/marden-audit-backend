@@ -1,13 +1,13 @@
 // Redis connection status check
-const { default: kvStore } = require('../src/services/storage/kv-store.js');
-const { default: config } = require('../src/config/index.js');
-const { default: logger } = require('../src/utils/logger.js');
+import kvStore from '../src/services/storage/kv-store.js';
+import config from '../src/config/index.js';
+import logger from '../src/utils/logger.js';
 
 /**
  * Endpoint to check Redis connection status
  * Useful for debugging Redis connectivity issues
  */
-module.exports = async function handler(req, res) {
+export default async function handler(req, res) {
   try {
     // Check if Redis configuration exists
     if (!config.redis || !config.redis.url || !config.redis.token) {

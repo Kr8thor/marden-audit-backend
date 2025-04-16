@@ -1,5 +1,5 @@
 // Direct environment variables checker endpoint
-module.exports = (req, res) => {
+export default function handler(req, res) {
   // Check environment variables directly
   const redisUrl = process.env.UPSTASH_REDIS_REST_URL;
   const redisToken = process.env.UPSTASH_REDIS_REST_TOKEN;
@@ -14,4 +14,4 @@ module.exports = (req, res) => {
       UPSTASH_REDIS_REST_TOKEN: redisToken ? `Set (starts with: ${redisToken.substring(0, 3)}...)` : 'Missing'
     }
   });
-};
+}

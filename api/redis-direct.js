@@ -1,7 +1,7 @@
 // Direct Redis connection test
-const { Redis } = require('@upstash/redis');
+import { Redis } from '@upstash/redis';
 
-module.exports = async (req, res) => {
+export default async function handler(req, res) {
   try {
     // Get environment variables directly
     const redisUrl = process.env.UPSTASH_REDIS_REST_URL;
@@ -52,4 +52,4 @@ module.exports = async (req, res) => {
       timestamp: new Date().toISOString()
     });
   }
-};
+}

@@ -1,12 +1,12 @@
 // Manual endpoint to process jobs
-const { default: AuditWorker } = require('../src/services/worker/index.js');
-const { default: logger } = require('../src/utils/logger.js');
+import AuditWorker from '../src/services/worker/index.js';
+import logger from '../src/utils/logger.js';
 
 /**
  * Manual endpoint to process jobs from the queue
  * Can be called via API to manually trigger job processing
  */
-module.exports = async function handler(req, res) {
+export default async function handler(req, res) {
   // Only allow POST requests for manual triggering
   if (req.method !== 'POST') {
     return res.status(405).json({ 
