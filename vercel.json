@@ -15,7 +15,39 @@
     "LOG_LEVEL": "info"
   },
   "functions": {
-    "api/*.js": {
+    "api/index.js": {
+      "memory": 1024,
+      "maxDuration": 60
+    },
+    "api/worker.js": {
+      "memory": 1024,
+      "maxDuration": 60
+    },
+    "api/health.js": {
+      "memory": 1024,
+      "maxDuration": 60
+    },
+    "api/audit.js": {
+      "memory": 1024,
+      "maxDuration": 60
+    }, 
+    "api/audit/index.js": {
+      "memory": 1024,
+      "maxDuration": 60
+    },
+    "api/audit/site.js": {
+      "memory": 1024,
+      "maxDuration": 60
+    },
+    "api/audit/page.js": {
+      "memory": 1024,
+      "maxDuration": 60
+    },
+    "api/job/[id].js": {
+      "memory": 1024,
+      "maxDuration": 60
+    },
+    "api/job/[id]/results.js": {
       "memory": 1024,
       "maxDuration": 60
     }
@@ -34,7 +66,7 @@
   "crons": [
     {
       "path": "/api/worker",
-      "schedule": "* * * * *"
+      "schedule": "0 0 * * *"
     }
   ]
 }
