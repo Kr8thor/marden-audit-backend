@@ -4,54 +4,14 @@
     "NODE_ENV": "production",
     "ALLOWED_ORIGINS": "https://audit.mardenseo.com"
   },
+  "buildCommand": "mv api api_old && mv api_new api && npm install",
+  "outputDirectory": "api",
   "functions": {
-    "api_new/*.js": {
-      "memory": 1024,
-      "maxDuration": 60
-    },
-    "api_new/audit/*.js": {
-      "memory": 1024,
-      "maxDuration": 60
-    },
-    "api_new/job/*.js": {
-      "memory": 1024,
-      "maxDuration": 60
-    },
-    "api_new/job/[id]/*.js": {
-      "memory": 1024,
-      "maxDuration": 60
-    }
+    "api/*.js": { "memory": 1024, "maxDuration": 60 },
+    "api/audit/*.js": { "memory": 1024, "maxDuration": 60 },
+    "api/job/*.js": { "memory": 1024, "maxDuration": 60 },
+    "api/job/[id]/*.js": { "memory": 1024, "maxDuration": 60 }
   },
-  "routes": [
-    {
-      "src": "/api/index",
-      "dest": "/api_new/index.js"
-    },
-    {
-      "src": "/api/health",
-      "dest": "/api_new/health.js"
-    },
-    {
-      "src": "/api/worker",
-      "dest": "/api_new/worker.js"
-    },
-    {
-      "src": "/api/audit/site",
-      "dest": "/api_new/audit/site.js"
-    },
-    {
-      "src": "/api/audit/page",
-      "dest": "/api_new/audit/page.js"
-    },
-    {
-      "src": "/api/job/([^/]+)$",
-      "dest": "/api_new/job/[id].js?id=$1"
-    },
-    {
-      "src": "/api/job/([^/]+)/results",
-      "dest": "/api_new/job/[id]/results.js?id=$1"
-    }
-  ],
   "headers": [
     {
       "source": "/(.*)",
