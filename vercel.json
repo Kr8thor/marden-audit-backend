@@ -2,56 +2,56 @@
   "version": 2,
   "env": {
     "NODE_ENV": "production",
-    "UPSTASH_REDIS_REST_URL": "https://smiling-shrimp-21387.upstash.io",
-    "UPSTASH_REDIS_REST_TOKEN": "AVOLAAIjcDFmNzVjNDVjZGM3MGY0NDczODEyMTA0NTAyOGNkMTc5OXAxMA",
-    "QUEUE_NAME": "marden_audit_queue",
-    "PROCESSING_QUEUE_NAME": "marden_audit_processing",
-    "JOB_PREFIX": "job:",
-    "MAX_PAGES": "20",
-    "CRAWL_DEPTH": "2",
-    "TIMEOUT": "30000",
-    "USER_AGENT": "MardenSEO Audit Bot v1.0",
-    "ALLOWED_ORIGINS": "https://audit.mardenseo.com",
-    "LOG_LEVEL": "info"
+    "ALLOWED_ORIGINS": "https://audit.mardenseo.com"
   },
   "functions": {
-    "api/index.js": {
+    "api_new/*.js": {
       "memory": 1024,
       "maxDuration": 60
     },
-    "api/worker.js": {
+    "api_new/audit/*.js": {
       "memory": 1024,
       "maxDuration": 60
     },
-    "api/health.js": {
+    "api_new/job/*.js": {
       "memory": 1024,
       "maxDuration": 60
     },
-    "api/audit.js": {
-      "memory": 1024,
-      "maxDuration": 60
-    }, 
-    "api/audit/index.js": {
-      "memory": 1024,
-      "maxDuration": 60
-    },
-    "api/audit/site.js": {
-      "memory": 1024,
-      "maxDuration": 60
-    },
-    "api/audit/page.js": {
-      "memory": 1024,
-      "maxDuration": 60
-    },
-    "api/job/[id].js": {
-      "memory": 1024,
-      "maxDuration": 60
-    },
-    "api/job/[id]/results.js": {
+    "api_new/job/[id]/*.js": {
       "memory": 1024,
       "maxDuration": 60
     }
   },
+  "routes": [
+    {
+      "src": "/api/index",
+      "dest": "/api_new/index.js"
+    },
+    {
+      "src": "/api/health",
+      "dest": "/api_new/health.js"
+    },
+    {
+      "src": "/api/worker",
+      "dest": "/api_new/worker.js"
+    },
+    {
+      "src": "/api/audit/site",
+      "dest": "/api_new/audit/site.js"
+    },
+    {
+      "src": "/api/audit/page",
+      "dest": "/api_new/audit/page.js"
+    },
+    {
+      "src": "/api/job/([^/]+)$",
+      "dest": "/api_new/job/[id].js?id=$1"
+    },
+    {
+      "src": "/api/job/([^/]+)/results",
+      "dest": "/api_new/job/[id]/results.js?id=$1"
+    }
+  ],
   "headers": [
     {
       "source": "/(.*)",

@@ -1,0 +1,9 @@
+{
+  "name": "marden-audit-backend-api",
+  "version": "1.0.0",
+  "private": true,
+  "description": "Vercel serverless API functions for Marden SEO Audit",
+  "dependencies": {
+    "axios": "^1.8.4"
+  }
+}
