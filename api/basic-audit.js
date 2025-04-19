@@ -1,4 +1,4 @@
-// Complete implementation of /api/basic-audit.js with REAL SEO analysis
+// Complete implementation of /api/basic-audit.js with comprehensive SEO analysis
 const axios = require('axios');
 const cheerio = require('cheerio');
 const redis = require('./lib/redis');
@@ -137,8 +137,8 @@ module.exports = async (req, res) => {
       console.log('Images:', imageCount, '(missing alt:', missingAltCount, ')');
       
       // Content analysis
-      const bodyText = $('body').text().replace(/\s+/g, ' ').trim();
-      const wordCount = bodyText.split(/\s+/).length;
+      const bodyText = $('body').text().replace(/\\s+/g, ' ').trim();
+      const wordCount = bodyText.split(/\\s+/).length;
       console.log('Word count:', wordCount);
       
       // Extract keywords

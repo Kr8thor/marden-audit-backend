@@ -1,72 +1,19 @@
 {
   "version": 2,
-  "env": {
-    "NODE_ENV": "production",
-    "UPSTASH_REDIS_REST_URL": "https://smiling-shrimp-21387.upstash.io",
-    "UPSTASH_REDIS_REST_TOKEN": "AVOLAAIjcDFmNzVjNDVjZGM3MGY0NDczODEyMTA0NTAyOGNkMTc5OXAxMA",
-    "QUEUE_NAME": "marden_audit_queue",
-    "PROCESSING_QUEUE_NAME": "marden_audit_processing",
-    "JOB_PREFIX": "job:",
-    "MAX_PAGES": "20",
-    "CRAWL_DEPTH": "2",
-    "TIMEOUT": "30000",
-    "USER_AGENT": "MardenSEO Audit Bot v1.0",
-    "ALLOWED_ORIGINS": "https://audit.mardenseo.com",
-    "LOG_LEVEL": "info"
-  },
-  "functions": {
-    "api/index.js": {
-      "memory": 1024,
-      "maxDuration": 60
-    },
-    "api/worker.js": {
-      "memory": 1024,
-      "maxDuration": 60
-    },
-    "api/health.js": {
-      "memory": 1024,
-      "maxDuration": 60
-    },
-    "api/audit.js": {
-      "memory": 1024,
-      "maxDuration": 60
-    }, 
-    "api/audit/index.js": {
-      "memory": 1024,
-      "maxDuration": 60
-    },
-    "api/audit/site.js": {
-      "memory": 1024,
-      "maxDuration": 60
-    },
-    "api/audit/page.js": {
-      "memory": 1024,
-      "maxDuration": 60
-    },
-    "api/job/[id].js": {
-      "memory": 1024,
-      "maxDuration": 60
-    },
-    "api/job/[id]/results.js": {
-      "memory": 1024,
-      "maxDuration": 60
-    }
-  },
-  "headers": [
+  "builds": [
     {
-      "source": "/(.*)",
-      "headers": [
-        { "key": "Access-Control-Allow-Credentials", "value": "true" },
-        { "key": "Access-Control-Allow-Origin", "value": "*" },
-        { "key": "Access-Control-Allow-Methods", "value": "GET,OPTIONS,PATCH,DELETE,POST,PUT" },
-        { "key": "Access-Control-Allow-Headers", "value": "X-CSRF-Token, X-Requested-With, Accept, Accept-Version, Content-Length, Content-MD5, Content-Type, Date, X-Api-Version" }
-      ]
+      "src": "api/index.js",
+      "use": "@vercel/node"
     }
   ],
-  "crons": [
+  "routes": [
     {
-      "path": "/api/worker",
-      "schedule": "0 0 * * *"
+      "src": "/(.*)",
+      "dest": "/api/index.js"
     }
-  ]
+  ],
+  "env": {
+    "UPSTASH_REDIS_REST_URL": "https://smiling-shrimp-21387.upstash.io",
+    "UPSTASH_REDIS_REST_TOKEN": "AVOLAAIjcDFmNzVjNDVjZGM3MGY0NDczODEyMTA0NTAyOGNkMTc5OXAxMA"
+  }
 }
