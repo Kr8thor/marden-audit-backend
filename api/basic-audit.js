@@ -1,13 +1,23 @@
 // Complete implementation of /api/basic-audit.js with comprehensive SEO analysis
 const axios = require('axios');
 const cheerio = require('cheerio');
-const { Redis } = require('@upstash/redis');
 
-// Initialize Redis client
-const redisClient = new Redis({
-  url: process.env.UPSTASH_REDIS_REST_URL,
-  token: process.env.UPSTASH_REDIS_REST_TOKEN,
-});
+// Try to initialize Redis, but handle missing configuration gracefully
+let redisClient = null;
+try {
+  const { Redis } = require('@upstash/redis');
+  if (process.env.UPSTASH_REDIS_REST_URL && process.env.UPSTASH_REDIS_REST_TOKEN) {
+    redisClient = new Redis({
+      url: process.env.UPSTASH_REDIS_REST_URL,
+      token: process.env.UPSTASH_REDIS_REST_TOKEN,
+    });
+    console.log('Redis client initialized successfully');
+  } else {
+    console.log('Redis environment variables are not set');
+  }
+} catch (error) {
+  console.error('Failed to initialize Redis client:', error.message);
+}
 
 // Set cache expiration time (1 hour)
 const CACHE_EXPIRY = 3600;
@@ -103,6 +113,31 @@ function analyzePage(html, url) {
   };
 }
 
+// Async function to check cache
+async function checkCache(key) {
+  if (!redisClient) return null;
+  
+  try {
+    return await redisClient.get(key);
+  } catch (error) {
+    console.error('Failed to check cache:', error.message);
+    return null;
+  }
+}
+
+// Async function to set cache
+async function setCache(key, value, expiry) {
+  if (!redisClient) return false;
+  
+  try {
+    await redisClient.set(key, value, { ex: expiry });
+    return true;
+  } catch (error) {
+    console.error('Failed to set cache:', error.message);
+    return false;
+  }
+}
+
 module.exports = async (req, res) => {
   // Enable CORS
   res.setHeader('Access-Control-Allow-Origin', '*');
@@ -132,7 +167,7 @@ module.exports = async (req, res) => {
     
     // Check cache
     const cacheKey = `seo_audit:${normalizedUrl}`;
-    const cachedData = await redisClient.get(cacheKey);
+    const cachedData = await checkCache(cacheKey);
     
     if (cachedData) {
       // Return cached data with cached flag set to true
@@ -177,8 +212,12 @@ module.exports = async (req, res) => {
     const result = analyzePage(html, normalizedUrl);
     
     // Cache the result
-    console.log('Caching result for:', normalizedUrl);
-    await redisClient.set(cacheKey, result, { ex: CACHE_EXPIRY });
+    if (redisClient) {
+      console.log('Caching result for:', normalizedUrl);
+      await setCache(cacheKey, result, CACHE_EXPIRY);
+    } else {
+      console.log('Skipping cache - Redis not available');
+    }
     
     // Return the analysis result
     return res.status(200).json(result);
