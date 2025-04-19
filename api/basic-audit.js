@@ -1,380 +1,193 @@
 // Complete implementation of /api/basic-audit.js with comprehensive SEO analysis
 const axios = require('axios');
 const cheerio = require('cheerio');
-const redis = require('./lib/redis');
+const { Redis } = require('@upstash/redis');
+
+// Initialize Redis client
+const redisClient = new Redis({
+  url: process.env.UPSTASH_REDIS_REST_URL,
+  token: process.env.UPSTASH_REDIS_REST_TOKEN,
+});
+
+// Set cache expiration time (1 hour)
+const CACHE_EXPIRY = 3600;
+
+// Calculate SEO score based on analysis
+function calculateScore(analysis) {
+  let score = 100;
+  const { title, metaDescription, headings } = analysis;
+  
+  // Title checks
+  if (!title.text) {
+    score -= 25; // No title is a serious issue
+  } else if (title.length < 30) {
+    score -= 10; // Title too short
+  } else if (title.length > 60) {
+    score -= 5; // Title too long
+  }
+  
+  // Meta description checks
+  if (!metaDescription.text) {
+    score -= 15; // No meta description
+  } else if (metaDescription.length < 50) {
+    score -= 10; // Meta description too short
+  } else if (metaDescription.length > 160) {
+    score -= 5; // Meta description too long
+  }
+  
+  // Heading checks
+  if (headings.h1Count === 0) {
+    score -= 15; // No H1 heading
+  } else if (headings.h1Count > 1) {
+    score -= 10; // Multiple H1 headings
+  }
+  
+  if (headings.h2Count === 0) {
+    score -= 5; // No H2 headings
+  }
+  
+  // Ensure score stays within 0-100 range
+  return Math.max(0, Math.min(100, score));
+}
+
+// Analyze page HTML
+function analyzePage(html, url) {
+  const $ = cheerio.load(html);
+  
+  // Extract title
+  const titleText = $('title').text().trim();
+  
+  // Extract meta description
+  const metaDescription = $('meta[name="description"]').attr('content') || '';
+  
+  // Extract headings
+  const h1Elements = $('h1');
+  const h2Elements = $('h2');
+  
+  const h1Texts = [];
+  h1Elements.each((i, el) => {
+    h1Texts.push($(el).text().trim());
+  });
+  
+  const h2Texts = [];
+  h2Elements.each((i, el) => {
+    h2Texts.push($(el).text().trim());
+  });
+  
+  const pageAnalysis = {
+    title: {
+      text: titleText,
+      length: titleText.length
+    },
+    metaDescription: {
+      text: metaDescription,
+      length: metaDescription.length
+    },
+    headings: {
+      h1Count: h1Elements.length,
+      h1Texts: h1Texts,
+      h2Count: h2Elements.length,
+      h2Texts: h2Texts
+    }
+  };
+  
+  // Calculate score
+  const score = calculateScore(pageAnalysis);
+  
+  return {
+    url,
+    score,
+    realDataFlag: true,
+    cached: false,
+    pageAnalysis
+  };
+}
 
 module.exports = async (req, res) => {
-  console.log('============= SEO AUDIT REQUEST STARTED =============');
-  console.log('Request received at:', new Date().toISOString());
-  
-  // Set CORS headers
+  // Enable CORS
   res.setHeader('Access-Control-Allow-Origin', '*');
-  res.setHeader('Access-Control-Allow-Methods', 'GET, POST, OPTIONS');
-  res.setHeader('Access-Control-Allow-Headers', 'Content-Type, Accept, Origin');
-  res.setHeader('Content-Type', 'application/json');
-
-  // Handle preflight
+  res.setHeader('Access-Control-Allow-Methods', 'GET, OPTIONS');
+  res.setHeader('Access-Control-Allow-Headers', 'Content-Type');
+  
+  // Handle OPTIONS request for CORS preflight
   if (req.method === 'OPTIONS') {
     return res.status(200).end();
   }
   
+  // Only allow GET requests
+  if (req.method !== 'GET') {
+    return res.status(405).json({ error: 'Method not allowed' });
+  }
+  
   try {
-    // Get URL parameter
-    let url = req.query?.url || '';
-    console.log('URL parameter received:', url);
+    // Get URL from query parameter
+    const { url } = req.query;
     
     if (!url) {
-      console.log('No URL provided, returning error');
-      return res.status(400).json({
-        status: 'error',
-        message: 'URL parameter is required',
-        timestamp: new Date().toISOString()
-      });
+      return res.status(400).json({ error: 'URL parameter is required' });
     }
     
-    // Normalize URL
-    let cleanUrl = url;
-    if (!url.startsWith('http')) {
-      cleanUrl = 'https://' + url;
+    // Normalize URL for caching
+    const normalizedUrl = url.toLowerCase().trim();
+    
+    // Check cache
+    const cacheKey = `seo_audit:${normalizedUrl}`;
+    const cachedData = await redisClient.get(cacheKey);
+    
+    if (cachedData) {
+      // Return cached data with cached flag set to true
+      console.log('Cache hit for:', normalizedUrl);
+      return res.status(200).json({ ...cachedData, cached: true });
     }
-    console.log('Normalized URL:', cleanUrl);
     
-    // Create a cache key
-    const cacheKey = `audit:${cleanUrl}`;
-    
-    // STEP 1: Check Redis cache first
+    // Fetch the URL content
+    console.log('Fetching content for:', normalizedUrl);
+    let response;
     try {
-      console.log('Checking Redis cache for URL:', cleanUrl);
-      const cachedResult = await redis.get(cacheKey);
-      
-      if (cachedResult) {
-        console.log('Cache HIT for URL:', cleanUrl);
-        try {
-          const parsed = JSON.parse(cachedResult);
-          console.log('Successfully parsed cached result');
-          
-          // Return the cached result with additional flags
-          return res.status(200).json({
-            ...parsed,
-            cached: true,
-            timestamp: new Date().toISOString()
-          });
-        } catch (parseError) {
-          console.error('Failed to parse cached result:', parseError);
-          // Continue to live analysis if parsing fails
-        }
-      } else {
-        console.log('Cache MISS for URL:', cleanUrl);
-      }
-    } catch (cacheError) {
-      console.error('Error checking cache:', cacheError);
-      // Continue to live analysis if cache check fails
-    }
-    
-    // STEP 2: Perform live analysis
-    console.log('Performing LIVE analysis for URL:', cleanUrl);
-    
-    try {
-      // Fetch the page with axios
-      console.log('Fetching page with axios...');
-      const response = await axios.get(cleanUrl, {
-        timeout: 15000, // 15 second timeout
+      response = await axios.get(normalizedUrl, {
         headers: {
-          'User-Agent': 'MardenSEO-Audit/1.0 (https://audit.mardenseo.com)'
+          'User-Agent': 'SEOAuditBot/1.0 (+https://mardenseo.com/bot)',
+          'Accept': 'text/html'
         },
-        maxContentLength: 5 * 1024 * 1024 // 5MB limit
+        timeout: 10000 // 10 second timeout
       });
-      
-      const html = response.data;
-      console.log('Successfully fetched page, content length:', html.length);
-      
-      // Load HTML into cheerio
-      console.log('Parsing HTML with cheerio...');
-      const $ = cheerio.load(html);
-      
-      // STEP 3: Extract and analyze SEO elements
-      console.log('Extracting SEO elements for analysis...');
-      
-      // Title analysis
-      const title = $('title').text().trim();
-      const titleLength = title.length;
-      console.log('Title:', title, '(length:', titleLength, ')');
-      
-      // Meta description analysis
-      const metaDescription = $('meta[name="description"]').attr('content') || '';
-      const metaDescriptionLength = metaDescription.length;
-      console.log('Meta description length:', metaDescriptionLength);
-      
-      // Headings analysis
-      const h1Elements = $('h1');
-      const h1Count = h1Elements.length;
-      const h1Texts = [];
-      h1Elements.each((i, el) => {
-        h1Texts.push($(el).text().trim());
-      });
-      console.log('H1 count:', h1Count);
-      
-      const h2Elements = $('h2');
-      const h2Count = h2Elements.length;
-      const h2Texts = [];
-      h2Elements.each((i, el) => {
-        h2Texts.push($(el).text().trim());
-      });
-      console.log('H2 count:', h2Count);
-      
-      const h3Count = $('h3').length;
-      
-      // Image analysis
-      const images = $('img');
-      const imageCount = images.length;
-      let missingAltCount = 0;
-      
-      images.each((i, img) => {
-        if (!$(img).attr('alt')) {
-          missingAltCount++;
-        }
-      });
-      console.log('Images:', imageCount, '(missing alt:', missingAltCount, ')');
-      
-      // Content analysis
-      const bodyText = $('body').text().replace(/\\s+/g, ' ').trim();
-      const wordCount = bodyText.split(/\\s+/).length;
-      console.log('Word count:', wordCount);
-      
-      // Extract keywords
-      const words = bodyText.toLowerCase().split(/[^a-z0-9]+/).filter(word => word.length > 3);
-      const wordFrequency = {};
-      
-      words.forEach(word => {
-        wordFrequency[word] = (wordFrequency[word] || 0) + 1;
-      });
-      
-      // Get top keywords
-      const sortedKeywords = Object.entries(wordFrequency)
-        .sort((a, b) => b[1] - a[1])
-        .slice(0, 5)
-        .map(([keyword, count]) => ({
-          keyword,
-          count,
-          density: ((count / words.length) * 100).toFixed(1)
-        }));
-      
-      console.log('Top keywords:', sortedKeywords);
-      
-      // STEP 4: Calculate SEO scores
-      console.log('Calculating SEO scores...');
-      
-      // Calculate individual scores
-      const titleScore = !title ? 0 : (titleLength < 20 || titleLength > 70) ? 60 : 100;
-      const metaDescScore = !metaDescription ? 0 : (metaDescriptionLength < 50 || metaDescriptionLength > 160) ? 60 : 100;
-      const headingScore = (h1Count === 0) ? 40 : (h1Count > 1) ? 70 : 100;
-      const imageScore = imageCount === 0 ? 100 : (missingAltCount / imageCount > 0.5) ? 50 : 90;
-      
-      // Calculate average score
-      const scores = [titleScore, metaDescScore, headingScore, imageScore];
-      const averageScore = Math.round(
-        scores.reduce((sum, score) => sum + score, 0) / scores.length
-      );
-      
-      console.log('Calculated scores:', {
-        title: titleScore,
-        metaDescription: metaDescScore,
-        headings: headingScore,
-        images: imageScore,
-        overall: averageScore
-      });
-      
-      // STEP 5: Identify SEO issues
-      console.log('Identifying SEO issues...');
-      const seoIssues = [];
-      
-      if (!title) {
-        seoIssues.push({
-          type: 'critical',
-          issue: 'Missing title tag',
-          impact: 'High',
-          recommendation: 'Add a descriptive title tag between 50-60 characters.'
-        });
-      } else if (titleLength < 20 || titleLength > 70) {
-        seoIssues.push({
-          type: 'warning',
-          issue: 'Title tag length is not optimal',
-          impact: 'Medium',
-          recommendation: `Your title is ${titleLength} characters. Optimal length is 50-60 characters.`
-        });
-      }
-      
-      if (!metaDescription) {
-        seoIssues.push({
-          type: 'critical',
-          issue: 'Missing meta description',
-          impact: 'High',
-          recommendation: 'Add a descriptive meta description between 120-158 characters.'
-        });
-      } else if (metaDescriptionLength < 50 || metaDescriptionLength > 160) {
-        seoIssues.push({
-          type: 'warning',
-          issue: 'Meta description length is not optimal',
-          impact: 'Medium',
-          recommendation: `Your meta description is ${metaDescriptionLength} characters. Optimal length is 120-158 characters.`
-        });
-      }
-      
-      if (h1Count === 0) {
-        seoIssues.push({
-          type: 'critical',
-          issue: 'Missing H1 heading',
-          impact: 'High',
-          recommendation: 'Add a single H1 heading containing your main keyword.'
-        });
-      } else if (h1Count > 1) {
-        seoIssues.push({
-          type: 'warning',
-          issue: `Multiple H1 headings (${h1Count})`,
-          impact: 'Medium',
-          recommendation: 'Use only one H1 heading per page for better SEO structure.'
-        });
-      }
-      
-      if (imageCount > 0 && missingAltCount > 0) {
-        seoIssues.push({
-          type: missingAltCount / imageCount > 0.5 ? 'critical' : 'warning',
-          issue: `${missingAltCount} images missing alt text`,
-          impact: missingAltCount / imageCount > 0.5 ? 'High' : 'Medium',
-          recommendation: 'Add descriptive alt text to all images for better accessibility and SEO.'
-        });
-      }
-      
-      // Add information issue
-      seoIssues.push({
-        type: 'info',
-        issue: 'Consider adding structured data',
-        impact: 'Low',
-        recommendation: 'Implement schema markup to enhance search result appearance.'
-      });
-      
-      // Sort issues by severity
-      const sortedIssues = seoIssues.sort((a, b) => {
-        const severityOrder = { critical: 0, warning: 1, info: 2 };
-        return severityOrder[a.type] - severityOrder[b.type];
-      });
-      
-      // Top issues for overview
-      const topIssues = sortedIssues.slice(0, 3).map(issue => ({
-        severity: issue.type,
-        description: issue.issue
-      }));
-      
-      // STEP 6: Create performance metrics
-      console.log('Generating performance metrics...');
-      
-      // Estimate performance metrics based on score and content
-      const lcpValue = parseFloat((2.5 - (averageScore * 0.01)).toFixed(1));
-      const clsValue = parseFloat((0.25 - (averageScore * 0.002)).toFixed(2));
-      const fidValue = 200 - averageScore;
-      
-      // STEP 7: Construct the complete result object
-      console.log('Constructing final result object...');
-      
-      const result = {
-        status: 'success',
-        url: cleanUrl,
-        score: averageScore,
-        issuesFound: seoIssues.length,
-        opportunities: Math.ceil(seoIssues.length * 0.7),
-        performanceMetrics: {
-          lcp: {
-            value: lcpValue,
-            unit: 's',
-            score: Math.max(40, averageScore - 10),
-          },
-          cls: {
-            value: clsValue,
-            score: Math.max(40, averageScore - 15),
-          },
-          fid: {
-            value: fidValue,
-            unit: 'ms',
-            score: Math.max(40, averageScore - 5),
-          },
-        },
-        topIssues: topIssues,
-        pageAnalysis: {
-          title,
-          titleLength,
-          metaDescription,
-          descriptionLength: metaDescriptionLength,
-          headings: { 
-            h1: h1Count, 
-            h2: h2Count, 
-            h3: h3Count,
-            h1Text: h1Texts.slice(0, 3) // First 3 H1 texts (if any)
-          },
-          images: {
-            total: imageCount,
-            missingAlt: missingAltCount
-          },
-          wordCount,
-          contentAnalysis: {
-            keywordDensity: sortedKeywords,
-            readability: {
-              score: Math.min(100, 40 + averageScore / 2),
-              level: averageScore > 80 ? 'Easy to read' : averageScore > 60 ? 'Standard' : 'Difficult',
-              suggestions: [
-                'Use shorter sentences for better readability',
-                'Break up large paragraphs into smaller ones',
-                'Use bullet points for lists'
-              ]
-            }
-          },
-          seoIssues: seoIssues
-        },
-        // CRITICAL: Add the real data flag and set cached to false
-        realDataFlag: true,
-        cached: false,
-        timestamp: new Date().toISOString()
-      };
-      
-      // STEP 8: Store in Redis cache
-      try {
-        console.log('Storing results in Redis cache...');
-        await redis.set(cacheKey, JSON.stringify(result), { ex: 3600 }); // 1-hour expiry
-        console.log('Successfully stored in cache');
-      } catch (cacheError) {
-        console.error('Failed to store in cache:', cacheError);
-        // Continue even if caching fails
-      }
-      
-      // STEP 9: Return the complete result
-      console.log('Returning success response with complete SEO analysis');
-      console.log('============= SEO AUDIT REQUEST COMPLETED =============');
-      return res.status(200).json(result);
-      
-    } catch (analysisError) {
-      console.error('Error during SEO analysis:', analysisError);
-      
-      // Return error response with details
-      return res.status(500).json({
-        status: 'error',
-        url: cleanUrl,
-        message: 'SEO analysis failed',
-        error: {
-          name: analysisError.name,
-          message: analysisError.message,
-          code: analysisError.code
-        },
-        timestamp: new Date().toISOString()
+    } catch (fetchError) {
+      console.error('Fetch error:', fetchError.message);
+      return res.status(400).json({
+        error: 'Failed to fetch URL',
+        details: fetchError.message,
+        url: normalizedUrl
       });
     }
+    
+    // Check if response is HTML
+    const contentType = response.headers['content-type'] || '';
+    if (!contentType.includes('text/html')) {
+      console.error('Non-HTML content type:', contentType);
+      return res.status(400).json({
+        error: 'URL does not return HTML content',
+        contentType,
+        url: normalizedUrl
+      });
+    }
+    
+    // Parse and analyze the HTML
+    console.log('Analyzing content for:', normalizedUrl);
+    const html = response.data;
+    const result = analyzePage(html, normalizedUrl);
+    
+    // Cache the result
+    console.log('Caching result for:', normalizedUrl);
+    await redisClient.set(cacheKey, result, { ex: CACHE_EXPIRY });
+    
+    // Return the analysis result
+    return res.status(200).json(result);
     
   } catch (error) {
-    console.error('Unhandled error in SEO audit handler:', error);
-    
+    console.error('SEO Audit Error:', error);
     return res.status(500).json({
-      status: 'error',
-      message: 'Internal server error',
-      error: error.message,
-      timestamp: new Date().toISOString()
+      error: 'Internal server error',
+      details: error.message
     });
   }
 };
