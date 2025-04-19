@@ -1,18 +1,7 @@
 // /api/basic-audit.js
-import axios from 'axios';
-import cheerio from 'cheerio';
-import { Redis } from '@upstash/redis';
+const axios = require('axios');
 
-// Initialize Redis client
-const redis = new Redis({
-  url: process.env.UPSTASH_REDIS_REST_URL || 'https://smiling-shrimp-21387.upstash.io',
-  token: process.env.UPSTASH_REDIS_REST_TOKEN || 'AVOLAAIjcDFmNzVjNDVjZGM3MGY0NDczODEyMTA0NTAyOGNkMTc5OXAxMA',
-});
-
-// Cache TTL in seconds (1 hour default)
-const CACHE_TTL = 3600;
-
-export default async function handler(req, res) {
+module.exports = async (req, res) => {
   // CORS headers
   res.setHeader('Access-Control-Allow-Credentials', true);
   res.setHeader('Access-Control-Allow-Origin', '*');
@@ -24,28 +13,34 @@ export default async function handler(req, res) {
     return res.status(200).end();
   }
   
+  console.log('basic-audit endpoint called, method:', req.method);
+  
   // Extract URL based on request method
-  let url = null;
+  let targetUrl = null;
   
   if (req.method === 'GET') {
     // For GET requests, extract URL from query parameters
-    url = req.query.url;
-    console.log('GET request received with URL:', url);
+    const urlParts = req.url.split('?');
+    if (urlParts.length > 1) {
+      const queryParams = new URLSearchParams(urlParts[1]);
+      targetUrl = queryParams.get('url');
+    }
+    console.log('GET audit request with URL:', targetUrl);
   } else if (req.method === 'POST') {
     // For POST requests, extract URL from request body
     if (req.body && typeof req.body === 'object') {
-      url = req.body.url;
+      targetUrl = req.body.url;
     } else if (req.body && typeof req.body === 'string') {
       try {
         const parsed = JSON.parse(req.body);
-        url = parsed.url;
+        targetUrl = parsed.url;
       } catch (e) {
         console.error('Failed to parse JSON body:', e);
       }
     }
-    console.log('POST request received with URL:', url);
+    console.log('POST audit request with URL:', targetUrl);
   } else {
-    // Reject other methods
+    // Return error for other methods
     return res.status(405).json({
       error: 'Method not allowed',
       message: 'This endpoint only accepts GET and POST requests'
@@ -53,7 +48,7 @@ export default async function handler(req, res) {
   }
   
   // Validate URL parameter
-  if (!url) {
+  if (!targetUrl) {
     return res.status(400).json({
       error: 'Missing URL parameter',
       message: 'URL is required',
@@ -62,54 +57,59 @@ export default async function handler(req, res) {
   }
   
   // Normalize URL
-  let normalizedUrl = url;
-  if (!normalizedUrl.startsWith('http')) {
-    normalizedUrl = 'https://' + normalizedUrl;
+  if (!targetUrl.startsWith('http')) {
+    targetUrl = 'https://' + targetUrl;
   }
   
-  // Create a simple response with the parsed URL
+  // Basic test of axios functionality
   try {
-    // Create a simple audit result
-    const auditResult = {
-      url: normalizedUrl,
+    console.log(`Testing axios by fetching ${targetUrl}`);
+    const response = await axios.get(targetUrl, {
+      timeout: 8000,
+      headers: {
+        'User-Agent': 'MardenSEOAuditBot/1.0 (+https://audit.mardenseo.com)'
+      }
+    });
+    
+    // Create a basic response with just title info
+    const title = response.data.match(/<title[^>]*>(.*?)<\/title>/is)?.[1] || 'No title found';
+    const metaDescription = response.data.match(/<meta\s+name=["']description["']\s+content=["']([^"']*)["']/i)?.[1] || '';
+    
+    return res.status(200).json({
+      url: targetUrl,
       auditDate: new Date().toISOString(),
-      overallScore: 75,
-      method: req.method,
-      cached: false,
+      overallScore: 75, // Simplified score
       metrics: {
         meta: {
           title: {
-            value: "Sample page title",
-            length: 17
+            value: title,
+            length: title.length
           },
           metaDescription: {
-            value: "Sample meta description for testing",
-            length: 32
+            value: metaDescription,
+            length: metaDescription.length
           },
           score: 80,
-          issues: ["Sample issue for testing"]
+          issues: []
+        },
+        content: {
+          wordCount: response.data.length / 6, // Rough estimation
+          score: 70,
+          issues: []
         }
       },
       summary: {
-        text: "This is a sample audit result to verify GET method is working",
-        issueCount: 1,
-        topIssues: [
-          {
-            severity: "info",
-            issue: "This is a test response"
-          }
-        ]
+        text: "Basic analysis completed successfully. Axios is working!",
+        issueCount: 0,
+        topIssues: []
       }
-    };
-    
-    // Return the result
-    return res.status(200).json(auditResult);
+    });
   } catch (error) {
-    console.error('Error:', error);
+    console.error('Error fetching URL:', error);
     return res.status(500).json({
-      error: 'Server error',
-      message: error.message || 'An unexpected error occurred',
-      method: req.method
+      error: 'Failed to analyze URL',
+      message: error.message,
+      timestamp: new Date().toISOString()
     });
   }
-}
+};
