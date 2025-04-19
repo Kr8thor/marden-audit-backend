@@ -1,32 +1,27 @@
 {
   "version": 2,
-  "buildCommand": "npm install",
-  "outputDirectory": "api",
-  "functions": {
-    "api/main.js": {
-      "memory": 1024,
-      "maxDuration": 60
-    }
-  },
-  "headers": [
+  "builds": [
     {
-      "source": "/(.*)",
-      "headers": [
-        { "key": "Access-Control-Allow-Credentials", "value": "true" },
-        { "key": "Access-Control-Allow-Origin", "value": "*" },
-        { "key": "Access-Control-Allow-Methods", "value": "GET,OPTIONS,PATCH,DELETE,POST,PUT" },
-        { "key": "Access-Control-Allow-Headers", "value": "X-CSRF-Token, X-Requested-With, Accept, Accept-Version, Content-Length, Content-MD5, Content-Type, Date, X-Api-Version" }
-      ]
+      "src": "api/index.js",
+      "use": "@vercel/node"
     }
   ],
   "routes": [
-    { "src": "/api", "dest": "/api/main.js" },
-    { "src": "/api/health", "dest": "/api/main.js?path=health" },
-    { "src": "/api/audit", "dest": "/api/main.js?path=audit" },
-    { "src": "/api/audit/site", "dest": "/api/main.js?path=audit/site" },
-    { "src": "/api/audit/page", "dest": "/api/main.js?path=audit/page" },
-    { "src": "/api/job/([^/]+)$", "dest": "/api/main.js?path=job&id=$1" },
-    { "src": "/api/job/([^/]+)/results", "dest": "/api/main.js?path=job/results&id=$1" },
-    { "src": "/api/worker", "dest": "/api/main.js?path=worker" }
-  ]
+    {
+      "src": "/api/health",
+      "dest": "/api/index.js?endpoint=health"
+    },
+    {
+      "src": "/api/basic-audit",
+      "dest": "/api/index.js?endpoint=basic-audit"
+    },
+    {
+      "src": "/(.*)",
+      "dest": "/api/index.js"
+    }
+  ],
+  "env": {
+    "UPSTASH_REDIS_REST_URL": "https://smiling-shrimp-21387.upstash.io",
+    "UPSTASH_REDIS_REST_TOKEN": "AVOLAAIjcDFmNzVjNDVjZGM3MGY0NDczODEyMTA0NTAyOGNkMTc5OXAxMA"
+  }
 }
