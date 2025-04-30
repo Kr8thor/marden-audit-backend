@@ -1,152 +1,49 @@
 # Marden SEO Audit Backend
 
-A comprehensive SEO audit backend system with asynchronous job processing and detailed recommendations.
-
-## Features
-
-- **Asynchronous Architecture**: Queue-based workflow for serverless environments
-- **Decoupled Components**: API, job queue, state store, and worker services
-- **Comprehensive Analysis**:
-  - On-page SEO (meta tags, headings, content)
-  - Technical SEO (status codes, redirects, URL structure)
-  - Performance metrics
-- **Prioritized Recommendations**: Smart recommendation engine
-- **Scalable Processing**: Handle sites of any size with batch processing
-
-## System Architecture
-
-The system is built with the following components:
-
-- **API Layer**: Express.js routes that accept audit requests
-- **State Store**: Vercel KV-based storage for maintaining job state
-- **Job Queue**: Asynchronous job processing system
-- **Worker Service**: Performs crawling and analysis in batches
-- **Analyzer**: Identifies SEO issues and generates recommendations
-- **Reporter**: Creates structured reports with prioritized fixes
-
-## Prerequisites
-
-- Node.js 18+ or 20+
-- Vercel account (for Vercel KV)
-- (Optional) Google PageSpeed Insights API key
-
-## Getting Started
-
-1. Clone the repository
-2. Install dependencies:
-
-```bash
-npm install
-```
-
-3. Create a `.env` file based on `.env.example`:
-
-```bash
-cp .env.example .env
-```
-
-4. Fill in the required environment variables in `.env`
-5. Start the development server:
-
-```bash
-npm run dev
-```
-
-## Running the Worker
-
-The worker service processes jobs from the queue:
-
-```bash
-npm run dev:worker
-```
+This is the backend API for the Marden SEO Audit Tool. It provides endpoints for analyzing websites for SEO best practices and generates detailed reports.
 
 ## API Endpoints
 
-- `POST /api/audit/site`: Submit a site audit job
-- `POST /api/audit/page`: Submit a single page audit
-- `GET /api/job/:id`: Get job status
-- `GET /api/job/:id/results`: Get job results
-- `GET /api/status`: Get queue status
-- `GET /api/health`: Health check endpoint
+- `/api/health` - Check the health of the API and Redis connection
+- `/api/basic-audit` - Perform a detailed SEO audit of a URL
 
-### Example API Usage
+## Features
 
-Submit a site audit job:
+- **Real-time SEO Analysis**: Analyzes websites in real-time for SEO issues
+- **Redis Caching**: Caches results to improve performance and stay within Vercel limits
+- **Comprehensive Checks**: Analyzes titles, meta descriptions, headings, content, images, links, and more
+- **Vercel Deployment**: Optimized for Vercel serverless functions
 
-```bash
-curl -X POST http://localhost:3000/api/audit/site \
-  -H "Content-Type: application/json" \
-  -d '{"url": "https://example.com", "options": {"maxPages": 10, "depth": 2}}'
-```
+## Consolidated API Architecture
 
-Check job status:
+To stay within Vercel's 12 function limit on the Hobby plan, this API uses a consolidated approach:
 
-```bash
-curl http://localhost:3000/api/job/JOB_ID
-```
+- A single API endpoint (`api/index.js`) handles multiple routes
+- Routes are determined by URL parameters
+- All SEO analysis logic is contained in one file to reduce function count
 
-Get job results:
+## Local Development
 
-```bash
-curl http://localhost:3000/api/job/JOB_ID/results
-```
+1. Clone the repository
+2. Install dependencies: `npm install`
+3. Create a `.env` file with Redis credentials
+4. Start the dev server: `npm run dev`
 
 ## Deployment
 
-The project is designed to be deployed to Vercel with Vercel KV:
+The API is deployed to Vercel. To deploy:
 
-1. Set up Vercel KV in your Vercel dashboard
-2. Link the project with Vercel CLI:
-
-```bash
-vercel link
+```
+vercel
 ```
 
-3. Add environment variables to Vercel:
+Or to deploy to production:
 
-```bash
-vercel env add
 ```
-
-4. Deploy to Vercel:
-
-```bash
 vercel --prod
 ```
 
-## Development
+## Environment Variables
 
-### Project Structure
-
-```
-src/
-  ├── api/            # API routes and server
-  ├── analyzers/      # SEO analyzers
-  │   ├── index.js            # Main analyzer
-  │   ├── meta-analyzer.js    # Meta tag analysis
-  │   ├── content-analyzer.js # Content analysis
-  │   └── technical-analyzer.js # Technical SEO analysis
-  ├── config/         # Configuration
-  ├── reporters/      # Report generators
-  ├── services/       # Core services
-  │   ├── queue/      # Job queue
-  │   ├── storage/    # Storage service
-  │   └── worker/     # Worker service
-  ├── utils/          # Utility functions
-  │   ├── crawler.js  # Web crawler
-  │   └── logger.js   # Logging utility
-  └── index.js        # Entry point
-```
-
-### Testing
-
-The `test` directory contains sample request payloads for testing:
-
-```bash
-# Test API
-curl -X POST http://localhost:3000/api/audit/site -H "Content-Type: application/json" -d @test/site-audit-request.json
-```
-
-## License
-
-ISC
+- `UPSTASH_REDIS_REST_URL`: URL for Redis connection
+- `UPSTASH_REDIS_REST_TOKEN`: Token for Redis authentication
