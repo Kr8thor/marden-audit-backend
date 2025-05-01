@@ -2,17 +2,6 @@
   "version": 2,
   "public": true,
   "regions": ["iad1"],
-  "functions": {
-    "api/index.js": {
-      "memory": 1024,
-      "maxDuration": 10
-    }
-  },
-  "env": {
-    "NODE_ENV": "production",
-    "UPSTASH_REDIS_REST_URL": "https://smiling-shrimp-21387.upstash.io",
-    "UPSTASH_REDIS_REST_TOKEN": "AVOLAAIjcDFmNzVjNDVjZGM3MGY0NDczODEyMTA0NTAyOGNkMTc5OXAxMA"
-  },
   "headers": [
     {
       "source": "/(.*)",
