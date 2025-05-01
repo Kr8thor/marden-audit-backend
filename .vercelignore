@@ -1,20 +1,31 @@
-# Ignore all files in the api directory except index.js
+.env
+node_modules
+api/_unused
 api/audit
 api/backup
 api/consolidated
 api/cron
 api/job
 api/v2
-api/_unused
-api/*.js
-!api/index.js
-
-# Ignore test directories
-test
-test-api
-simple-test
-
-# Ignore development files
-*.log
-.git
-node_modules
+api/lib
+api/audit.js
+api/basic-audit.js
+api/env-check-direct.js
+api/env-check.js
+api/health.js
+api/main.js
+api/old-index.js
+api/process-direct.js
+api/process-jobs.js
+api/real-seo-audit.js
+api/redis-direct.js
+api/redis-status.js
+api/redis-test.js
+api/seo-analysis.js
+api/seo-analyze.js
+api/status.js
+api/test-redis-direct.js
+api/test-redis.js
+api/test-router.js
+api/utils.js
+api/worker.js
