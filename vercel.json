@@ -3,13 +3,13 @@
   "public": true,
   "regions": ["iad1"],
   "functions": {
-    "api/consolidated/index.js": {
+    "api/index.js": {
       "memory": 1024,
       "maxDuration": 10
     }
   },
   "rewrites": [
-    { "source": "/(.*)", "destination": "/api/consolidated/index.js" }
+    { "source": "/(.*)", "destination": "/api/index.js" }
   ],
   "env": {
     "NODE_ENV": "production",
