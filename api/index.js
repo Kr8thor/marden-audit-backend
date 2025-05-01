@@ -4,6 +4,24 @@ const axios = require('axios');
 const cheerio = require('cheerio');
 const url = require('url');
 
+// Import Redis client for caching if configured
+let redis;
+try {
+  redis = require('./lib/redis');
+  console.log('Redis client imported successfully');
+} catch (error) {
+  console.warn('Redis client not available:', error.message);
+  // Provide fallback empty implementation
+  redis = {
+    getCache: async () => null,
+    setCache: async () => false,
+    deleteCache: async () => false,
+    checkHealth: async () => false,
+    generateCacheKey: () => '',
+    isRedisConfigured: false
+  };
+}
+
 // Add CORS headers
 function addCorsHeaders(res) {
   // Set CORS headers to allow all origins for now (can be restricted later)
@@ -49,6 +67,27 @@ function normalizeUrl(url) {
  */
 async function handleHealthCheck(req, res) {
   try {
+    // Check Redis health if configured
+    let redisStatus = {
+      status: 'disabled',
+      message: 'Redis not configured'
+    };
+    
+    if (redis.isRedisConfigured) {
+      try {
+        const redisHealth = await redis.checkHealth();
+        redisStatus = {
+          status: redisHealth ? 'ok' : 'error',
+          message: redisHealth ? 'Connected' : 'Connection failed'
+        };
+      } catch (error) {
+        redisStatus = {
+          status: 'error',
+          message: `Connection failed: ${error.message}`
+        };
+      }
+    }
+    
     return res.status(200).json({
       status: 'ok',
       version: 'v2',
@@ -56,7 +95,8 @@ async function handleHealthCheck(req, res) {
       components: {
         api: {
           status: 'ok'
-        }
+        },
+        redis: redisStatus
       },
       timestamp: new Date().toISOString()
     });
@@ -684,9 +724,55 @@ async function handleSeoAnalyze(req, res) {
       });
     }
     
-    // Perform analysis with any provided options
-    console.log(`Performing SEO analysis for ${normalizedUrl}`);
-    const analysisResults = await analyzeSeo(normalizedUrl, options || {});
+    // Check for cached results if Redis is configured
+    let analysisResults;
+    let cached = false;
+    let cachedAt = null;
+    
+    if (redis.isRedisConfigured) {
+      try {
+        // Generate cache key from URL and options
+        const cacheKey = redis.generateCacheKey(normalizedUrl, options || {});
+        console.log(`Checking cache for key: ${cacheKey}`);
+        
+        // Try to get cached results
+        const cachedResults = await redis.getCache(cacheKey);
+        
+        if (cachedResults) {
+          console.log(`Cache hit for ${normalizedUrl}`);
+          analysisResults = cachedResults.data;
+          cached = true;
+          cachedAt = cachedResults.timestamp;
+        } else {
+          console.log(`Cache miss for ${normalizedUrl}, performing analysis`);
+        }
+      } catch (error) {
+        console.error('Error checking cache:', error);
+        // Continue with analysis if cache check fails
+      }
+    }
+    
+    // If no cached results, perform analysis
+    if (!analysisResults) {
+      console.log(`Performing SEO analysis for ${normalizedUrl}`);
+      analysisResults = await analyzeSeo(normalizedUrl, options || {});
+      
+      // Cache successful results if Redis is configured
+      if (redis.isRedisConfigured && !analysisResults.error) {
+        try {
+          const cacheKey = redis.generateCacheKey(normalizedUrl, options || {});
+          // Cache for 24 hours (86400 seconds)
+          await redis.setCache(cacheKey, {
+            data: analysisResults,
+            timestamp: new Date().toISOString()
+          }, 86400);
+          console.log(`Cached results for ${normalizedUrl}`);
+        } catch (error) {
+          console.error('Error caching results:', error);
+          // Continue without caching if it fails
+        }
+      }
+    }
     
     // Check if analysis resulted in an error
     if (analysisResults.error) {
@@ -703,9 +789,10 @@ async function handleSeoAnalyze(req, res) {
     // Return successful analysis results
     return res.status(200).json({
       status: 'ok',
-      message: 'SEO analysis completed',
+      message: cached ? 'SEO analysis retrieved from cache' : 'SEO analysis completed',
       url: normalizedUrl,
-      cached: false,
+      cached,
+      cachedAt,
       timestamp: new Date().toISOString(),
       data: analysisResults
     });
