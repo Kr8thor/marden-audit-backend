@@ -50,13 +50,6 @@ module.exports = async (req, res) => {
       });
     }
 
-    // Parse options with defaults
-    const auditOptions = {
-      maxPages: parseInt(options.maxPages) || 10,
-      crawlDepth: parseInt(options.crawlDepth) || 2,
-      ...options
-    };
-    
     // Validate URL format
     const normalizedUrl = url.startsWith('http') ? url : `https://${url}`;
     try {
@@ -69,9 +62,18 @@ module.exports = async (req, res) => {
       });
     }
     
-    // Check cache first
+    // Set default options
+    const siteOptions = {
+      maxPages: Math.min(options.maxPages || 10, 100), // Max 100 pages
+      crawlDepth: Math.min(options.crawlDepth || 2, 5), // Max depth 5
+      ...options
+    };
+    
+    // Create cache key based on URL and options
     const urlKey = normalizeUrl(normalizedUrl);
-    const cacheKey = `${urlKey}:max${auditOptions.maxPages}:depth${auditOptions.crawlDepth}`;
+    const cacheKey = `${urlKey}:max${siteOptions.maxPages}:depth${siteOptions.crawlDepth}`;
+    
+    // Check cache first as per Cache-First Strategy (requirement #4)
     const cachedData = await getCachedData('site', cacheKey);
     
     if (cachedData) {
@@ -81,7 +83,6 @@ module.exports = async (req, res) => {
         message: 'Site audit results retrieved from cache',
         jobId: cachedData.jobId || 'cached',
         url: normalizedUrl,
-        options: auditOptions,
         cached: true,
         cachedAt: cachedData.cachedAt,
         timestamp: new Date().toISOString(),
@@ -94,7 +95,7 @@ module.exports = async (req, res) => {
       type: 'site_audit',
       params: {
         url: normalizedUrl,
-        options: auditOptions,
+        options: siteOptions,
       },
       status: 'queued',
       progress: 0,
@@ -107,7 +108,7 @@ module.exports = async (req, res) => {
       message: 'Site audit job created',
       jobId,
       url: normalizedUrl,
-      options: auditOptions,
+      options: siteOptions,
       timestamp: new Date().toISOString()
     });
   } catch (error) {

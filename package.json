@@ -6,7 +6,10 @@
     "start": "node api/index.js",
     "dev": "nodemon api/index.js",
     "test": "jest",
-    "lint": "eslint ."
+    "lint": "eslint .",
+    "test:redis": "node api/redis-test.js",
+    "deploy": "vercel",
+    "deploy:prod": "vercel --prod"
   },
   "keywords": [
     "seo",
