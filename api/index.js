@@ -1,4 +1,29 @@
 // Simplified API endpoint for SEO audit
+// Utility functions
+
+/**
+ * Normalize URL to ensure proper format
+ * @param {string} url URL to normalize
+ * @returns {string} Normalized URL with proper protocol
+ */
+function normalizeUrl(url) {
+  if (!url) return '';
+  
+  // Trim whitespace
+  let normalizedUrl = url.trim();
+  
+  // Remove trailing slashes for consistency
+  while (normalizedUrl.endsWith('/')) {
+    normalizedUrl = normalizedUrl.slice(0, -1);
+  }
+  
+  // Ensure proper protocol
+  if (!normalizedUrl.startsWith('http://') && !normalizedUrl.startsWith('https://')) {
+    normalizedUrl = `https://${normalizedUrl}`;
+  }
+  
+  return normalizedUrl;
+}
 const axios = require('axios');
 const cheerio = require('cheerio');
 const url = require('url');
@@ -331,8 +356,8 @@ async function handleSeoAnalyze(req, res) {
       }
     }
     
-    // Get URL from request body
-    const { url } = requestBody;
+    // Get URL and options from request body
+    const { url, options } = requestBody;
     
     if (!url) {
       return res.status(400).json({
@@ -342,8 +367,8 @@ async function handleSeoAnalyze(req, res) {
       });
     }
     
-    // Validate URL format
-    const normalizedUrl = url.startsWith('http') ? url : `https://${url}`;
+    // Normalize and validate URL format
+    const normalizedUrl = normalizeUrl(url);
     try {
       new URL(normalizedUrl);
     } catch (error) {
@@ -354,11 +379,23 @@ async function handleSeoAnalyze(req, res) {
       });
     }
     
-    // Perform analysis
+    // Perform analysis with any provided options
     console.log(`Performing SEO analysis for ${normalizedUrl}`);
-    const analysisResults = await analyzeSeo(normalizedUrl);
+    const analysisResults = await analyzeSeo(normalizedUrl, options || {});
     
-    // Return analysis results
+    // Check if analysis resulted in an error
+    if (analysisResults.error) {
+      return res.status(200).json({
+        status: 'error',
+        message: analysisResults.error.message || 'SEO analysis encountered an error',
+        url: normalizedUrl,
+        cached: false,
+        timestamp: new Date().toISOString(),
+        data: analysisResults
+      });
+    }
+    
+    // Return successful analysis results
     return res.status(200).json({
       status: 'ok',
       message: 'SEO analysis completed',
@@ -372,7 +409,7 @@ async function handleSeoAnalyze(req, res) {
     return res.status(500).json({
       status: 'error',
       message: 'Failed to perform SEO analysis',
-      error: error.message,
+      error: error.message || 'Unknown error',
       timestamp: new Date().toISOString()
     });
   }
@@ -385,7 +422,7 @@ module.exports = async (req, res) => {
   // Add CORS headers
   addCorsHeaders(res);
   
-  // Handle OPTIONS request
+  // Handle OPTIONS request for CORS preflight
   if (req.method === 'OPTIONS') {
     return res.status(200).end();
   }
@@ -400,6 +437,28 @@ module.exports = async (req, res) => {
     // Get the query parameters
     req.query = parsedUrl.query;
     
+    // Global request timeout to prevent hanging serverless functions
+    const requestTimeout = setTimeout(() => {
+      console.error(`Request timeout for ${path}`);
+      if (!res.headersSent) {
+        return res.status(503).json({
+          status: 'error',
+          message: 'Request timed out',
+          path,
+          timestamp: new Date().toISOString()
+        });
+      }
+    }, 25000); // 25 second timeout (just under Vercel's 30s limit)
+    
+    // Define a function to clear the timeout when the request completes
+    const clearRequestTimeout = () => {
+      clearTimeout(requestTimeout);
+    };
+    
+    // Add event listeners to clear the timeout when the response is sent
+    res.on('finish', clearRequestTimeout);
+    res.on('close', clearRequestTimeout);
+    
     // Route based on path
     if (path === '/v2/health' || path === '/health') {
       return await handleHealthCheck(req, res);
@@ -413,6 +472,7 @@ module.exports = async (req, res) => {
         version: 'v2',
         endpoints: [
           '/v2/health',
+          '/seo-analyze',
           '/v2/seo-analyze'
         ],
         timestamp: new Date().toISOString()
@@ -428,10 +488,13 @@ module.exports = async (req, res) => {
   } catch (error) {
     console.error('Error handling request:', error);
     
-    return res.status(500).json({
+    // Provide safe error response with appropriate status code
+    const statusCode = error.statusCode || 500;
+    
+    return res.status(statusCode).json({
       status: 'error',
       message: 'Internal server error',
-      error: error.message,
+      error: process.env.NODE_ENV === 'production' ? 'An unexpected error occurred' : error.message,
       timestamp: new Date().toISOString()
     });
   }
