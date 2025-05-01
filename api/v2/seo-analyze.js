@@ -86,192 +86,244 @@ module.exports = async (req, res) => {
     
     // Fetch page content
     console.log(`Performing quick SEO analysis for ${normalizedUrl}`);
-    const response = await axios.get(normalizedUrl, {
-      timeout: 10000,
-      headers: {
-        'User-Agent': 'MardenSEOAuditBot/1.0 (+https://audit.mardenseo.com)'
-      }
-    });
-    
-    // Parse with cheerio
-    const $ = cheerio.load(response.data);
-    
-    // Extract SEO elements
-    const titleText = $('title').text().trim();
-    const metaDescription = $('meta[name="description"]').attr('content') || '';
-    const canonicalUrl = $('link[rel="canonical"]').attr('href') || '';
-    const hreflangLinks = [];
-    $('link[rel="alternate"][hreflang]').each((i, el) => {
-      hreflangLinks.push({
-        hreflang: $(el).attr('hreflang'),
-        href: $(el).attr('href')
-      });
-    });
-    
-    // Extract headings
-    const h1Elements = $('h1');
-    const h2Elements = $('h2');
-    const h3Elements = $('h3');
-    
-    const h1Texts = [];
-    h1Elements.each((i, el) => {
-      h1Texts.push($(el).text().trim());
-    });
-    
-    const h2Texts = [];
-    h2Elements.each((i, el) => {
-      h2Texts.push($(el).text().trim());
-    });
-    
-    // Extract images without alt text
-    const imagesWithoutAlt = [];
-    $('img').each((i, el) => {
-      const alt = $(el).attr('alt');
-      const src = $(el).attr('src');
-      if (!alt && src) {
-        imagesWithoutAlt.push(src);
-      }
-    });
-    
-    // Calculate total content length
-    let contentText = $('body').text().trim();
-    contentText = contentText.replace(/\\s+/g, ' ');
-    const contentLength = contentText.length;
-    
-    // Count internal and external links
-    const internalLinks = [];
-    const externalLinks = [];
-    
-    $('a[href]').each((i, el) => {
-      const href = $(el).attr('href');
-      
-      if (!href || href.startsWith('#') || href.startsWith('javascript:')) {
-        return;
-      }
-      
-      try {
-        const linkUrl = new URL(href, normalizedUrl);
-        
-        if (linkUrl.hostname === new URL(normalizedUrl).hostname) {
-          internalLinks.push(linkUrl.href);
-        } else {
-          externalLinks.push(linkUrl.href);
+    try {
+      const response = await axios.get(normalizedUrl, {
+        timeout: 15000,
+        headers: {
+          'User-Agent': 'MardenSEOAuditBot/1.0 (+https://audit.mardenseo.com)'
         }
-      } catch (error) {
-        // Skip malformed URLs
+      });
+      
+      // Parse with cheerio
+      const $ = cheerio.load(response.data);
+      
+      // Extract SEO elements
+      const titleText = $('title').text().trim();
+      const metaDescription = $('meta[name="description"]').attr('content') || '';
+      const canonicalUrl = $('link[rel="canonical"]').attr('href') || '';
+      const hreflangLinks = [];
+      
+      $('link[rel="alternate"][hreflang]').each((i, el) => {
+        hreflangLinks.push({
+          hreflang: $(el).attr('hreflang'),
+          href: $(el).attr('href')
+        });
+      });
+      
+      // Extract headings
+      const h1Elements = $('h1');
+      const h2Elements = $('h2');
+      const h3Elements = $('h3');
+      
+      const h1Texts = [];
+      h1Elements.each((i, el) => {
+        h1Texts.push($(el).text().trim());
+      });
+      
+      const h2Texts = [];
+      h2Elements.each((i, el) => {
+        h2Texts.push($(el).text().trim());
+      });
+      
+      // Extract images without alt text
+      const imagesWithoutAlt = [];
+      $('img').each((i, el) => {
+        const alt = $(el).attr('alt');
+        const src = $(el).attr('src');
+        if (!alt && src) {
+          imagesWithoutAlt.push(src);
+        }
+      });
+      
+      // Calculate total content length
+      let contentText = $('body').text().trim();
+      contentText = contentText.replace(/\s+/g, ' ');
+      const contentLength = contentText.length;
+      
+      // Count internal and external links
+      const internalLinks = [];
+      const externalLinks = [];
+      
+      $('a[href]').each((i, el) => {
+        const href = $(el).attr('href');
+        
+        if (!href || href.startsWith('#') || href.startsWith('javascript:')) {
+          return;
+        }
+        
+        try {
+          const linkUrl = new URL(href, normalizedUrl);
+          
+          if (linkUrl.hostname === new URL(normalizedUrl).hostname) {
+            internalLinks.push(linkUrl.href);
+          } else {
+            externalLinks.push(linkUrl.href);
+          }
+        } catch (error) {
+          // Skip malformed URLs
+        }
+      });
+      
+      // Calculate score
+      let score = 100;
+      let issuesFound = 0;
+      
+      // Title checks (25 points max)
+      if (!titleText) {
+        score -= 25;
+        issuesFound++;
+      } else if (titleText.length < 30) {
+        score -= 10;
+        issuesFound++;
+      } else if (titleText.length > 60) {
+        score -= 5;
+        issuesFound++;
       }
-    });
-    
-    // Calculate score
-    let score = 100;
-    let issuesFound = 0;
-    
-    // Title checks
-    if (!titleText) {
-      score -= 25;
-      issuesFound++;
-    } else if (titleText.length < 30) {
-      score -= 10;
-      issuesFound++;
-    } else if (titleText.length > 60) {
-      score -= 5;
-      issuesFound++;
-    }
-    
-    // Meta description checks
-    if (!metaDescription) {
-      score -= 15;
-      issuesFound++;
-    } else if (metaDescription.length < 50) {
-      score -= 10;
-      issuesFound++;
-    } else if (metaDescription.length > 160) {
-      score -= 5;
-      issuesFound++;
-    }
-    
-    // Heading checks
-    if (h1Elements.length === 0) {
-      score -= 15;
-      issuesFound++;
-    } else if (h1Elements.length > 1) {
-      score -= 10;
-      issuesFound++;
-    }
-    
-    if (h2Elements.length === 0) {
-      score -= 5;
-      issuesFound++;
-    }
-    
-    // Image alt text checks
-    if (imagesWithoutAlt.length > 0) {
-      score -= Math.min(15, imagesWithoutAlt.length * 3);
-      issuesFound++;
-    }
-    
-    // Content length check
-    if (contentLength < 300) {
-      score -= 10;
-      issuesFound++;
-    }
-    
-    // Canonical check
-    if (!canonicalUrl) {
-      score -= 5;
-      issuesFound++;
-    }
-    
-    // Ensure score stays within 0-100 range
-    score = Math.max(0, Math.min(100, score));
-    
-    // Create analysis result
-    const analysisResult = {
-      url: normalizedUrl,
-      score,
-      issuesFound,
-      opportunities: Math.max(0, issuesFound - 1),
-      pageAnalysis: {
-        title: {
-          text: titleText,
-          length: titleText.length
-        },
-        metaDescription: {
-          text: metaDescription,
-          length: metaDescription.length
-        },
-        headings: {
-          h1Count: h1Elements.length,
-          h1Texts: h1Texts.slice(0, 5), // First 5 H1 texts
-          h2Count: h2Elements.length,
-          h2Texts: h2Texts.slice(0, 5),  // First 5 H2 texts
-          h3Count: h3Elements.length
-        },
-        links: {
-          internalCount: internalLinks.length,
-          externalCount: externalLinks.length,
-          totalCount: internalLinks.length + externalLinks.length
-        },
-        images: {
-          withoutAltCount: imagesWithoutAlt.length
-        },
-        contentLength,
-        canonical: canonicalUrl,
-        hreflang: hreflangLinks
+      
+      // Meta description checks (15 points max)
+      if (!metaDescription) {
+        score -= 15;
+        issuesFound++;
+      } else if (metaDescription.length < 50) {
+        score -= 10;
+        issuesFound++;
+      } else if (metaDescription.length > 160) {
+        score -= 5;
+        issuesFound++;
       }
-    };
-    
-    // Cache the result
-    await cacheData('quick-seo', urlKey, analysisResult, QUICK_ANALYSIS_CACHE_TTL);
-    
-    // Return analysis result
-    return res.status(200).json({
-      status: 'ok',
-      message: 'Quick SEO analysis completed',
-      timestamp: new Date().toISOString(),
-      cached: false,
-      ...analysisResult
-    });
+      
+      // Heading checks (25 points max)
+      if (h1Elements.length === 0) {
+        score -= 15;
+        issuesFound++;
+      } else if (h1Elements.length > 1) {
+        score -= 10;
+        issuesFound++;
+      }
+      
+      if (h2Elements.length === 0) {
+        score -= 5;
+        issuesFound++;
+      }
+      
+      // Image alt text checks (15 points max)
+      if (imagesWithoutAlt.length > 0) {
+        score -= Math.min(15, imagesWithoutAlt.length * 3);
+        issuesFound++;
+      }
+      
+      // Content length check (10 points max)
+      if (contentLength < 300) {
+        score -= 10;
+        issuesFound++;
+      }
+      
+      // Canonical check (5 points max)
+      if (!canonicalUrl) {
+        score -= 5;
+        issuesFound++;
+      }
+      
+      // Links check (5 points max)
+      if (internalLinks.length === 0 && externalLinks.length === 0) {
+        score -= 5;
+        issuesFound++;
+      }
+      
+      // Ensure score stays within 0-100 range
+      score = Math.max(0, Math.min(100, score));
+
+      // Calculate opportunities (improvements that can be made)
+      const opportunities = Math.min(issuesFound, 5); // Cap at 5 for UI
+      
+      // Create analysis result
+      const analysisResult = {
+        url: normalizedUrl,
+        score,
+        issuesFound,
+        opportunities,
+        pageAnalysis: {
+          title: {
+            text: titleText,
+            length: titleText ? titleText.length : 0
+          },
+          metaDescription: {
+            text: metaDescription,
+            length: metaDescription ? metaDescription.length : 0
+          },
+          headings: {
+            h1Count: h1Elements.length,
+            h1Texts: h1Texts.slice(0, 5), // First 5 H1 texts
+            h2Count: h2Elements.length,
+            h2Texts: h2Texts.slice(0, 5),  // First 5 H2 texts
+            h3Count: h3Elements.length
+          },
+          links: {
+            internalCount: internalLinks.length,
+            externalCount: externalLinks.length,
+            totalCount: internalLinks.length + externalLinks.length
+          },
+          images: {
+            withoutAltCount: imagesWithoutAlt.length
+          },
+          contentLength,
+          canonical: canonicalUrl,
+          hreflang: hreflangLinks
+        }
+      };
+      
+      // Cache the result
+      await cacheData('quick-seo', urlKey, analysisResult, QUICK_ANALYSIS_CACHE_TTL);
+      
+      // Return analysis result
+      return res.status(200).json({
+        status: 'ok',
+        message: 'Quick SEO analysis completed',
+        timestamp: new Date().toISOString(),
+        cached: false,
+        ...analysisResult
+      });
+    } catch (fetchError) {
+      console.error(`Error fetching URL ${normalizedUrl}:`, fetchError);
+      
+      // Return a more detailed error with a default minimum score
+      return res.status(200).json({
+        status: 'ok',
+        url: normalizedUrl,
+        score: 30, // Default minimum score to avoid 0
+        issuesFound: 3,
+        opportunities: 2,
+        error: true,
+        errorDetails: fetchError.message,
+        message: `Error analyzing URL: ${fetchError.message}`,
+        pageAnalysis: {
+          title: {
+            text: 'Error fetching page',
+            length: 0
+          },
+          metaDescription: {
+            text: '',
+            length: 0
+          },
+          headings: {
+            h1Count: 0,
+            h1Texts: [],
+            h2Count: 0,
+            h2Texts: []
+          },
+          links: {
+            internalCount: 0,
+            externalCount: 0,
+            totalCount: 0
+          },
+          images: {
+            withoutAltCount: 0
+          },
+          contentLength: 0
+        },
+        timestamp: new Date().toISOString()
+      });
+    }
   } catch (error) {
     console.error('Error performing quick SEO analysis:', error);
     return res.status(500).json({
