@@ -1,0 +1,20 @@
+# Ignore all files in the api directory except index.js
+api/audit
+api/backup
+api/consolidated
+api/cron
+api/job
+api/v2
+api/_unused
+api/*.js
+!api/index.js
+
+# Ignore test directories
+test
+test-api
+simple-test
+
+# Ignore development files
+*.log
+.git
+node_modules
