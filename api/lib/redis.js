@@ -4,10 +4,15 @@ const { Redis } = require('@upstash/redis');
 // Initialize Redis client with proper error handling
 let redis;
 
+// Get Redis credentials from environment or use fallback for development
+const REDIS_URL = process.env.UPSTASH_REDIS_REST_URL || 'https://smiling-shrimp-21387.upstash.io';
+const REDIS_TOKEN = process.env.UPSTASH_REDIS_REST_TOKEN || 'AVOLAAIjcDFmNzVjNDVjZGM3MGY0NDczODEyMTA0NTAyOGNkMTc5OXAxMA';
+
 try {
+  console.log('Initializing Redis client with URL:', REDIS_URL);
   redis = new Redis({
-    url: process.env.UPSTASH_REDIS_REST_URL,
-    token: process.env.UPSTASH_REDIS_REST_TOKEN,
+    url: REDIS_URL,
+    token: REDIS_TOKEN,
   });
   console.log("Redis client initialized successfully");
 } catch (error) {
