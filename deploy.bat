@@ -1,5 +1,11 @@
 @echo off
-REM Deploy script for backend
+echo Deploying Marden Audit Backend to Vercel...
 
-echo Deploying backend with consolidated API endpoints...
-vercel --prod
+echo Installing vercel CLI if not already installed...
+call npm install -g vercel
+
+echo Deploying to production...
+call vercel --prod
+
+echo Deployment completed!
+pause

@@ -1,28 +1,31 @@
 {
   "version": 2,
-  "builds": [
-    {
-      "src": "api/index.js",
-      "use": "@vercel/node"
-    }
-  ],
-  "routes": [
-    { "src": "/api/(.*)", "dest": "/api/$1" },
-    { "src": "/(.*)", "dest": "/api/index.js" }
-  ],
+  "public": true,
+  "regions": ["iad1"],
   "functions": {
-    "api/**/*.js": {
-      "maxDuration": 60
+    "api/**": {
+      "memory": 1024,
+      "maxDuration": 10
     }
   },
-  "crons": [
+  "routes": [
     {
-      "path": "/api/cron/worker",
-      "schedule": "0 0 * * *"
+      "src": "/api/(.*)",
+      "dest": "/api/index.js"
     }
   ],
   "env": {
-    "UPSTASH_REDIS_REST_URL": "https://smiling-shrimp-21387.upstash.io",
-    "UPSTASH_REDIS_REST_TOKEN": "AVOLAAIjcDFmNzVjNDVjZGM3MGY0NDczODEyMTA0NTAyOGNkMTc5OXAxMA"
-  }
+    "NODE_ENV": "production"
+  },
+  "headers": [
+    {
+      "source": "/api/(.*)",
+      "headers": [
+        { "key": "Access-Control-Allow-Credentials", "value": "true" },
+        { "key": "Access-Control-Allow-Origin", "value": "*" },
+        { "key": "Access-Control-Allow-Methods", "value": "GET,OPTIONS,PATCH,DELETE,POST,PUT" },
+        { "key": "Access-Control-Allow-Headers", "value": "X-CSRF-Token, X-Requested-With, Accept, Accept-Version, Content-Length, Content-MD5, Content-Type, Date, X-Api-Version, Origin, Cache-Control" }
+      ]
+    }
+  ]
 }

@@ -1,37 +1,61 @@
-const { nanoid } = require('nanoid');
-const { redis } = require('../lib/redis.js');
+// Page audit endpoint - Submit a single page for SEO analysis
+const { createJob, normalizeUrl, getCachedData, cacheData, DEFAULT_CACHE_TTL } = require('../lib/redis.js');
 
 module.exports = async function handler(req, res) {
   // Only accept POST requests
   if (req.method !== 'POST') {
-    return res.status(405).json({ error: 'Method not allowed' });
+    return res.status(405).json({ 
+      status: 'error', 
+      message: 'Method not allowed' 
+    });
   }
 
   try {
     // Get URL from request body
-    const { url } = req.body;
+    const { url, options } = req.body;
     
     if (!url) {
-      return res.status(400).json({ error: 'URL is required' });
+      return res.status(400).json({ 
+        status: 'error', 
+        message: 'URL is required' 
+      });
     }
 
+    // Validate URL format
+    try {
+      new URL(url.startsWith('http') ? url : `https://${url}`);
+    } catch (error) {
+      return res.status(400).json({
+        status: 'error',
+        message: 'Invalid URL provided',
+      });
+    }
+    
+    // Check cache first as per Cache-First Strategy (requirement #4)
+    const normalizedUrl = normalizeUrl(url);
+    const cachedData = await getCachedData('page', normalizedUrl);
+    
+    if (cachedData) {
+      console.log(`Serving cached page audit for ${url}`);
+      return res.status(200).json({
+        status: 'ok',
+        message: 'Page audit results retrieved from cache',
+        jobId: cachedData.jobId || 'cached',
+        url: url,
+        cached: true,
+        cachedAt: cachedData.cachedAt,
+        results: cachedData
+      });
+    }
+    
     // Create a job ID
-    const jobId = nanoid();
-    
-    // Create job data
-    const job = {
-      id: jobId,
-      url,
-      status: 'queued',
-      created: Date.now(),
-      updated: Date.now(),
-    };
-    
-    // Store job in Redis
-    await redis.set(`job:${jobId}`, JSON.stringify(job));
-    
-    // Add job to queue
-    await redis.rpush('audit:queue', jobId);
+    const jobId = await createJob({
+      type: 'page_audit',
+      params: {
+        url: normalizedUrl,
+        options: options || {},
+      },
+    });
     
     // Return job ID to client
     return res.status(202).json({
@@ -43,8 +67,9 @@ module.exports = async function handler(req, res) {
   } catch (error) {
     console.error('Error creating page audit job:', error);
     return res.status(500).json({
-      error: 'Failed to create page audit job',
-      message: error.message
+      status: 'error',
+      message: 'Failed to create page audit job',
+      error: error.message
     });
   }
 }
