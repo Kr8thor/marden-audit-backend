@@ -105,10 +105,29 @@ async function getJob(jobId) {
   try {
     const jobKey = `${keys.jobPrefix}${jobId}`;
     const jobData = await redis.get(jobKey);
-    return jobData ? JSON.parse(jobData) : null;
+    
+    if (!jobData) {
+      return null;
+    }
+    
+    // Handle both string and object formats
+    let parsedData;
+    if (typeof jobData === 'string') {
+      try {
+        parsedData = JSON.parse(jobData);
+      } catch (e) {
+        console.error(`Error parsing job data for ${jobId}:`, e);
+        return null;
+      }
+    } else {
+      // If it's already an object, just use it directly
+      parsedData = jobData;
+    }
+    
+    return parsedData;
   } catch (error) {
     console.error(`Error getting job ${jobId}:`, error);
-    throw error;
+    return null;
   }
 }
 
@@ -133,7 +152,7 @@ async function createJob(jobData) {
       ...jobData,
     };
     
-    // Save the job data
+    // Save the job data as JSON string
     await redis.set(jobKey, JSON.stringify(job));
     
     // Add the job ID to the queue
@@ -157,13 +176,12 @@ async function updateJob(jobId, updatedData) {
     const jobKey = `${keys.jobPrefix}${jobId}`;
     
     // Get current job data
-    const jobData = await redis.get(jobKey);
-    if (!jobData) {
+    const job = await getJob(jobId);
+    if (!job) {
       return false;
     }
     
-    // Parse and update
-    const job = JSON.parse(jobData);
+    // Create updated job object
     const updatedJob = {
       ...job,
       ...updatedData,
@@ -175,7 +193,7 @@ async function updateJob(jobId, updatedData) {
     return true;
   } catch (error) {
     console.error(`Error updating job ${jobId}:`, error);
-    throw error;
+    return false;
   }
 }
 
@@ -193,7 +211,7 @@ async function getNextJob() {
     return jobId;
   } catch (error) {
     console.error('Error getting next job:', error);
-    throw error;
+    return null;
   }
 }
 
@@ -210,7 +228,26 @@ async function getCachedData(type, url, keyword = '') {
     const cacheKey = `${keys.cachePrefix}${type}:${normalizedUrl}${keyword ? `:${keyword}` : ''}`;
     
     const cachedData = await redis.get(cacheKey);
-    return cachedData ? JSON.parse(cachedData) : null;
+    
+    if (!cachedData) {
+      return null;
+    }
+    
+    // Handle both string and object formats
+    let parsedData;
+    if (typeof cachedData === 'string') {
+      try {
+        parsedData = JSON.parse(cachedData);
+      } catch (e) {
+        console.error(`Error parsing cached data for ${cacheKey}:`, e);
+        return null;
+      }
+    } else {
+      // If it's already an object, just use it directly
+      parsedData = cachedData;
+    }
+    
+    return parsedData;
   } catch (error) {
     console.error(`Error getting cached data for ${url}:`, error);
     // Graceful degradation - return null on cache error
@@ -239,15 +276,28 @@ async function cacheData(type, url, data, ttl = DEFAULT_CACHE_TTL, keyword = '')
       cachedAt: Date.now(),
     };
     
-    // Keep cached items under 1MB for best performance (per requirement #11)
-    const serialized = JSON.stringify(cachedData);
-    if (serialized.length > 1000000) {
-      console.warn(`Cached data for ${cacheKey} exceeds 1MB limit`);
-    }
-    
     // Cache with TTL
-    await redis.set(cacheKey, serialized, { ex: ttl });
-    return true;
+    try {
+      const serialized = JSON.stringify(cachedData);
+      
+      // Keep cached items under 512KB for best performance (per requirement #12)
+      if (serialized.length > 512000) {
+        console.warn(`Cached data for ${cacheKey} exceeds 512KB limit, may impact performance`);
+      }
+      
+      await redis.set(cacheKey, serialized, { ex: ttl });
+      return true;
+    } catch (error) {
+      console.error(`Error serializing cache data for ${url}:`, error);
+      // Fallback to storing a simplified version
+      const simplifiedData = {
+        url: data.url || url,
+        cachedAt: Date.now(),
+        error: 'Failed to serialize full data'
+      };
+      await redis.set(cacheKey, JSON.stringify(simplifiedData), { ex: ttl });
+      return false;
+    }
   } catch (error) {
     console.error(`Error caching data for ${url}:`, error);
     return false;

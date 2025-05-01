@@ -3,20 +3,23 @@
   "public": true,
   "regions": ["iad1"],
   "functions": {
-    "api/**": {
+    "api/index.js": {
       "memory": 1024,
       "maxDuration": 10
     }
   },
   "rewrites": [
-    { "source": "/api/(.*)", "destination": "/api/index.js" }
+    { "source": "/api/(.*)", "destination": "/api/index.js" },
+    { "source": "/(.*)", "destination": "/api/index.js" }
   ],
   "env": {
-    "NODE_ENV": "production"
+    "NODE_ENV": "production",
+    "UPSTASH_REDIS_REST_URL": "https://smiling-shrimp-21387.upstash.io",
+    "UPSTASH_REDIS_REST_TOKEN": "AVOLAAIjcDFmNzVjNDVjZGM3MGY0NDczODEyMTA0NTAyOGNkMTc5OXAxMA"
   },
   "headers": [
     {
-      "source": "/api/(.*)",
+      "source": "/(.*)",
       "headers": [
         { "key": "Access-Control-Allow-Credentials", "value": "true" },
         { "key": "Access-Control-Allow-Origin", "value": "*" },
