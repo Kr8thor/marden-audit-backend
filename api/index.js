@@ -1,5 +1,24 @@
-// Simplified API endpoint for SEO audit
-// Utility functions
+// Unified API endpoint for SEO audit to stay under Vercel's Hobby plan limits
+// This consolidates multiple endpoints into a single serverless function
+const axios = require('axios');
+const cheerio = require('cheerio');
+const url = require('url');
+
+// Add CORS headers
+function addCorsHeaders(res) {
+  // Set CORS headers to allow all origins for now (can be restricted later)
+  res.setHeader('Access-Control-Allow-Credentials', true);
+  res.setHeader('Access-Control-Allow-Origin', '*');
+  res.setHeader('Access-Control-Allow-Methods', 'GET,OPTIONS,PATCH,DELETE,POST,PUT');
+  res.setHeader('Access-Control-Allow-Headers', 'X-CSRF-Token, X-Requested-With, Accept, Accept-Version, Content-Length, Content-MD5, Content-Type, Date, X-Api-Version, Origin, Cache-Control');
+  
+  // Add extra security headers
+  res.setHeader('X-Content-Type-Options', 'nosniff');
+  res.setHeader('X-XSS-Protection', '1; mode=block');
+  
+  // Log CORS setup for debugging
+  console.log('CORS headers added to response');
+}
 
 /**
  * Normalize URL to ensure proper format
@@ -23,25 +42,6 @@ function normalizeUrl(url) {
   }
   
   return normalizedUrl;
-}
-const axios = require('axios');
-const cheerio = require('cheerio');
-const url = require('url');
-
-// Add CORS headers
-function addCorsHeaders(res) {
-  // Set CORS headers to allow all origins for now (can be restricted later)
-  res.setHeader('Access-Control-Allow-Credentials', true);
-  res.setHeader('Access-Control-Allow-Origin', '*');
-  res.setHeader('Access-Control-Allow-Methods', 'GET,OPTIONS,PATCH,DELETE,POST,PUT');
-  res.setHeader('Access-Control-Allow-Headers', 'X-CSRF-Token, X-Requested-With, Accept, Accept-Version, Content-Length, Content-MD5, Content-Type, Date, X-Api-Version, Origin, Cache-Control');
-  
-  // Add extra security headers
-  res.setHeader('X-Content-Type-Options', 'nosniff');
-  res.setHeader('X-XSS-Protection', '1; mode=block');
-  
-  // Log CORS setup for debugging
-  console.log('CORS headers added to response');
 }
 
 /**
@@ -77,14 +77,62 @@ async function handleHealthCheck(req, res) {
 async function analyzeSeo(urlString) {
   try {
     console.log(`Analyzing SEO for ${urlString}`);
+    const startTime = Date.now();
     
-    // Fetch the page
-    const response = await axios.get(urlString, {
-      timeout: 15000,
-      headers: {
-        'User-Agent': 'MardenSEOAuditBot/1.0'
+    // Fetch the page with appropriate error handling
+    let response;
+    try {
+      response = await axios.get(urlString, {
+        timeout: 15000,
+        headers: {
+          'User-Agent': 'MardenSEOAuditBot/1.0',
+          'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,image/webp,*/*;q=0.8',
+          'Accept-Language': 'en-US,en;q=0.5',
+          'Cache-Control': 'no-cache'
+        }
+      });
+    } catch (error) {
+      // Handle common fetch errors with detailed reporting
+      let errorMessage = 'Failed to fetch the page';
+      let errorType = 'fetch_error';
+      
+      if (error.code === 'ECONNREFUSED') {
+        errorMessage = 'Connection refused. The server may be down or blocking requests.';
+        errorType = 'connection_refused';
+      } else if (error.code === 'ETIMEDOUT' || error.code === 'ESOCKETTIMEDOUT') {
+        errorMessage = 'Request timed out. The server took too long to respond.';
+        errorType = 'timeout';
+      } else if (error.code === 'ENOTFOUND') {
+        errorMessage = 'Domain not found. The URL may be incorrect or the domain may not exist.';
+        errorType = 'domain_not_found';
+      } else if (error.response) {
+        // The request was made and the server responded with a status code outside of 2xx
+        const status = error.response.status;
+        
+        if (status === 403) {
+          errorMessage = 'Access forbidden. The server refused to allow access to the requested resource.';
+          errorType = 'access_forbidden';
+        } else if (status === 404) {
+          errorMessage = 'Page not found. The requested URL does not exist on this server.';
+          errorType = 'not_found';
+        } else if (status === 500) {
+          errorMessage = 'Server error. The server encountered an unexpected condition.';
+          errorType = 'server_error';
+        } else if (status === 503) {
+          errorMessage = 'Service unavailable. The server is currently unable to handle the request.';
+          errorType = 'service_unavailable';
+        } else {
+          errorMessage = `HTTP error ${status}. The server returned an error response.`;
+          errorType = 'http_error';
+        }
       }
-    });
+      
+      throw {
+        type: errorType,
+        message: errorMessage,
+        originalError: error.message
+      };
+    }
     
     // Load content into cheerio
     const $ = cheerio.load(response.data);
@@ -95,8 +143,10 @@ async function analyzeSeo(urlString) {
     const h1Text = $('h1').first().text().trim();
     const h1Count = $('h1').length;
     const h2Count = $('h2').length;
+    const h3Count = $('h3').length;
     const canonicalTag = $('link[rel="canonical"]').attr('href') || '';
     const robotsTag = $('meta[name="robots"]').attr('content') || '';
+    const hasMobileViewport = $('meta[name="viewport"]').length > 0;
     
     // Extract headings
     const headings = {
@@ -117,21 +167,32 @@ async function analyzeSeo(urlString) {
       headings.h3.push($(el).text().trim());
     });
     
-    // Extract images without alt text
+    // Extract all images and count those without alt text
+    const allImages = [];
     const imagesWithoutAlt = [];
     $('img').each((i, el) => {
       const alt = $(el).attr('alt');
       const src = $(el).attr('src');
-      if (!alt && src) {
-        imagesWithoutAlt.push(src);
+      if (src) {
+        allImages.push({
+          src,
+          alt: alt || '',
+          hasAlt: !!alt
+        });
+        
+        if (!alt) {
+          imagesWithoutAlt.push(src);
+        }
       }
     });
     
-    // Count links
+    // Count links and analyze them
     const links = {
       internal: 0,
       external: 0,
-      total: 0
+      total: 0,
+      nofollow: 0,
+      brokenInternalLinks: [] // Would require additional requests to verify
     };
     
     $('a[href]').each((i, el) => {
@@ -143,11 +204,16 @@ async function analyzeSeo(urlString) {
       
       try {
         const linkUrl = new URL(href, urlString);
+        const hasNofollow = $(el).attr('rel')?.includes('nofollow') || false;
         
         if (linkUrl.hostname === new URL(urlString).hostname) {
           links.internal++;
         } else {
           links.external++;
+        }
+        
+        if (hasNofollow) {
+          links.nofollow++;
         }
         
         links.total++;
@@ -158,8 +224,8 @@ async function analyzeSeo(urlString) {
     
     // Calculate content statistics
     let contentText = $('body').text().trim();
-    contentText = contentText.replace(/\\s+/g, ' ');
-    const wordCount = contentText.split(/\\s+/).length;
+    contentText = contentText.replace(/\s+/g, ' ');
+    const wordCount = contentText.split(/\s+/).length;
     const contentLength = contentText.length;
     
     // Check for structured data
@@ -179,31 +245,73 @@ async function analyzeSeo(urlString) {
     // Check for schema.org microdata
     const hasMicrodata = $('[itemscope]').length > 0;
     
+    // Check for Open Graph and Twitter tags
+    const openGraphTags = {
+      title: $('meta[property="og:title"]').attr('content') || '',
+      description: $('meta[property="og:description"]').attr('content') || '',
+      image: $('meta[property="og:image"]').attr('content') || '',
+      url: $('meta[property="og:url"]').attr('content') || '',
+      type: $('meta[property="og:type"]').attr('content') || ''
+    };
+    
+    const twitterTags = {
+      card: $('meta[name="twitter:card"]').attr('content') || '',
+      title: $('meta[name="twitter:title"]').attr('content') || '',
+      description: $('meta[name="twitter:description"]').attr('content') || '',
+      image: $('meta[name="twitter:image"]').attr('content') || ''
+    };
+    
     // Calculate score based on factors
     let score = 100;
     const issues = [];
     
+    // Organize issues by category for V2 API format
+    const categories = {
+      metadata: {
+        score: 100,
+        issues: []
+      },
+      content: {
+        score: 100,
+        issues: []
+      },
+      technical: {
+        score: 100,
+        issues: []
+      },
+      userExperience: {
+        score: 100,
+        issues: []
+      }
+    };
+    
     // Title checks
     if (!title) {
       score -= 20;
-      issues.push({
+      categories.metadata.score -= 25;
+      categories.metadata.issues.push({
         type: 'missing_title',
         severity: 'critical',
+        impact: 'high',
         recommendation: 'Add a title tag to your page'
       });
     } else if (title.length < 30) {
       score -= 10;
-      issues.push({
+      categories.metadata.score -= 15;
+      categories.metadata.issues.push({
         type: 'title_too_short',
         severity: 'warning',
+        impact: 'medium',
         current: title,
         recommendation: 'Make your title tag longer (30-60 characters recommended)'
       });
     } else if (title.length > 60) {
       score -= 5;
-      issues.push({
+      categories.metadata.score -= 10;
+      categories.metadata.issues.push({
         type: 'title_too_long',
         severity: 'info',
+        impact: 'low',
         current: title,
         recommendation: 'Consider shortening your title tag (30-60 characters recommended)'
       });
@@ -212,24 +320,30 @@ async function analyzeSeo(urlString) {
     // Meta description checks
     if (!metaDescription) {
       score -= 15;
-      issues.push({
+      categories.metadata.score -= 20;
+      categories.metadata.issues.push({
         type: 'missing_meta_description',
         severity: 'critical',
+        impact: 'high',
         recommendation: 'Add a meta description to your page'
       });
     } else if (metaDescription.length < 50) {
       score -= 10;
-      issues.push({
+      categories.metadata.score -= 15;
+      categories.metadata.issues.push({
         type: 'meta_description_too_short',
         severity: 'warning',
+        impact: 'medium',
         current: metaDescription,
         recommendation: 'Make your meta description longer (50-160 characters recommended)'
       });
     } else if (metaDescription.length > 160) {
       score -= 5;
-      issues.push({
+      categories.metadata.score -= 10;
+      categories.metadata.issues.push({
         type: 'meta_description_too_long',
         severity: 'info',
+        impact: 'low',
         current: metaDescription,
         recommendation: 'Consider shortening your meta description (50-160 characters recommended)'
       });
@@ -238,16 +352,20 @@ async function analyzeSeo(urlString) {
     // H1 checks
     if (h1Count === 0) {
       score -= 15;
-      issues.push({
+      categories.content.score -= 20;
+      categories.content.issues.push({
         type: 'missing_h1',
         severity: 'critical',
+        impact: 'high',
         recommendation: 'Add an H1 heading to your page'
       });
     } else if (h1Count > 1) {
       score -= 10;
-      issues.push({
+      categories.content.score -= 15;
+      categories.content.issues.push({
         type: 'multiple_h1',
         severity: 'warning',
+        impact: 'medium',
         current: h1Count,
         recommendation: 'Use only one H1 heading per page'
       });
@@ -256,9 +374,11 @@ async function analyzeSeo(urlString) {
     // Content length check
     if (wordCount < 300) {
       score -= 10;
-      issues.push({
+      categories.content.score -= 15;
+      categories.content.issues.push({
         type: 'thin_content',
         severity: 'warning',
+        impact: 'medium',
         current: wordCount,
         recommendation: 'Add more content to your page (aim for at least 300 words)'
       });
@@ -266,11 +386,15 @@ async function analyzeSeo(urlString) {
     
     // Image alt text check
     if (imagesWithoutAlt.length > 0) {
-      score -= Math.min(15, imagesWithoutAlt.length * 3);
-      issues.push({
+      const penaltyPoints = Math.min(15, imagesWithoutAlt.length * 3);
+      score -= penaltyPoints;
+      categories.content.score -= Math.min(20, penaltyPoints);
+      categories.content.issues.push({
         type: 'images_missing_alt',
         severity: 'warning',
+        impact: 'medium',
         count: imagesWithoutAlt.length,
+        current: `${imagesWithoutAlt.length} of ${allImages.length} images`,
         recommendation: 'Add alt text to all images for better accessibility and SEO'
       });
     }
@@ -278,25 +402,66 @@ async function analyzeSeo(urlString) {
     // Canonical check
     if (!canonicalTag) {
       score -= 5;
-      issues.push({
+      categories.technical.score -= 10;
+      categories.technical.issues.push({
         type: 'missing_canonical',
         severity: 'info',
+        impact: 'low',
         recommendation: 'Add a canonical tag to indicate the preferred version of this page'
+      });
+    }
+    
+    // Mobile viewport check
+    if (!hasMobileViewport) {
+      score -= 10;
+      categories.userExperience.score -= 20;
+      categories.userExperience.issues.push({
+        type: 'missing_viewport',
+        severity: 'critical',
+        impact: 'high',
+        recommendation: 'Add a viewport meta tag for proper mobile rendering'
       });
     }
     
     // Structured data check
     if (structuredData.length === 0 && !hasMicrodata) {
       score -= 5;
-      issues.push({
+      categories.technical.score -= 10;
+      categories.technical.issues.push({
         type: 'no_structured_data',
         severity: 'info',
+        impact: 'medium',
         recommendation: 'Add structured data to help search engines understand your content'
       });
     }
     
-    // Ensure score stays within 0-100 range
+    // Social media tags check
+    if (!openGraphTags.title && !openGraphTags.description) {
+      categories.metadata.score -= 5;
+      categories.metadata.issues.push({
+        type: 'missing_og_tags',
+        severity: 'info',
+        impact: 'low',
+        recommendation: 'Add Open Graph tags for better social media sharing'
+      });
+    }
+    
+    if (!twitterTags.card && !twitterTags.title) {
+      categories.metadata.score -= 5;
+      categories.metadata.issues.push({
+        type: 'missing_twitter_tags',
+        severity: 'info',
+        impact: 'low',
+        recommendation: 'Add Twitter Card tags for better Twitter sharing'
+      });
+    }
+    
+    // Ensure scores stay within 0-100 range
     score = Math.max(0, Math.min(100, score));
+    categories.metadata.score = Math.max(0, Math.min(100, categories.metadata.score));
+    categories.content.score = Math.max(0, Math.min(100, categories.content.score));
+    categories.technical.score = Math.max(0, Math.min(100, categories.technical.score));
+    categories.userExperience.score = Math.max(0, Math.min(100, categories.userExperience.score));
     
     // Determine overall status
     let status = 'good';
@@ -306,13 +471,79 @@ async function analyzeSeo(urlString) {
       status = 'needs_improvement';
     }
     
-    // Return analysis results
+    // Calculate critical issues count
+    const criticalIssuesCount = 
+      categories.metadata.issues.filter(i => i.severity === 'critical').length +
+      categories.content.issues.filter(i => i.severity === 'critical').length +
+      categories.technical.issues.filter(i => i.severity === 'critical').length +
+      categories.userExperience.issues.filter(i => i.severity === 'critical').length;
+    
+    // Calculate total issues count
+    const totalIssuesCount = 
+      categories.metadata.issues.length +
+      categories.content.issues.length +
+      categories.technical.issues.length +
+      categories.userExperience.issues.length;
+    
+    // Generate recommendations from issues
+    const recommendations = [];
+    
+    // Add critical issues as high priority recommendations
+    [...categories.metadata.issues, 
+     ...categories.content.issues, 
+     ...categories.technical.issues, 
+     ...categories.userExperience.issues]
+      .filter(issue => issue.severity === 'critical')
+      .forEach(issue => {
+        recommendations.push({
+          priority: 'high',
+          type: issue.type,
+          description: issue.recommendation
+        });
+      });
+    
+    // Add warning issues as medium priority recommendations
+    [...categories.metadata.issues, 
+     ...categories.content.issues, 
+     ...categories.technical.issues, 
+     ...categories.userExperience.issues]
+      .filter(issue => issue.severity === 'warning')
+      .forEach(issue => {
+        recommendations.push({
+          priority: 'medium',
+          type: issue.type,
+          description: issue.recommendation
+        });
+      });
+    
+    // Add info issues as low priority recommendations
+    [...categories.metadata.issues, 
+     ...categories.content.issues, 
+     ...categories.technical.issues, 
+     ...categories.userExperience.issues]
+      .filter(issue => issue.severity === 'info')
+      .forEach(issue => {
+        recommendations.push({
+          priority: 'low',
+          type: issue.type,
+          description: issue.recommendation
+        });
+      });
+    
+    // Performance metrics calculation
+    const endTime = Date.now();
+    const analysisTime = endTime - startTime;
+    
+    // Return analysis results in V2 API format
     return {
       url: urlString,
       score,
       status,
-      issues,
-      metadata: {
+      criticalIssuesCount,
+      totalIssuesCount,
+      categories,
+      recommendations,
+      pageData: {
         title: {
           text: title,
           length: title.length
@@ -321,25 +552,91 @@ async function analyzeSeo(urlString) {
           text: metaDescription,
           length: metaDescription.length
         },
-        canonical: canonicalTag,
-        robots: robotsTag
+        headings: {
+          h1Count,
+          h1Texts: headings.h1,
+          h2Count,
+          h2Texts: headings.h2,
+          h3Count
+        },
+        content: {
+          wordCount,
+          contentLength
+        },
+        links: {
+          internalCount: links.internal,
+          externalCount: links.external,
+          totalCount: links.total
+        },
+        images: {
+          total: allImages.length,
+          withoutAlt: imagesWithoutAlt.length
+        },
+        technical: {
+          hasCanonical: !!canonicalTag,
+          canonicalUrl: canonicalTag,
+          hasMobileViewport,
+          hasStructuredData: structuredData.length > 0 || hasMicrodata,
+          structuredDataTypes: structuredData.map(item => item.type)
+        }
       },
-      content: {
-        wordCount,
+      // Include original format fields for backward compatibility
+      pageAnalysis: {
+        title: {
+          text: title,
+          length: title.length
+        },
+        metaDescription: {
+          text: metaDescription,
+          length: metaDescription.length
+        },
+        headings: {
+          h1Count,
+          h1Texts: headings.h1,
+          h2Count,
+          h2Texts: headings.h2,
+          h3Count
+        },
+        links: {
+          internalCount: links.internal,
+          externalCount: links.external,
+          totalCount: links.total
+        },
+        images: {
+          withoutAltCount: imagesWithoutAlt.length,
+          total: allImages.length
+        },
         contentLength,
-        headings,
-        links,
-        imagesWithoutAlt: imagesWithoutAlt.length
+        canonical: canonicalTag
       },
-      technical: {
-        hasStructuredData: structuredData.length > 0 || hasMicrodata,
-        structuredDataTypes: structuredData.map(item => item.type)
+      issuesFound: totalIssuesCount,
+      opportunities: Math.min(totalIssuesCount, 10),
+      metadata: {
+        analysisTime,
+        responseSize: response.headers['content-length'] ? 
+          parseInt(response.headers['content-length']) : 
+          response.data.length,
+        responseTime: response.headers['x-response-time'] ? 
+          parseInt(response.headers['x-response-time']) : 
+          null
       },
-      timestamp: new Date().toISOString()
+      analyzedAt: new Date().toISOString()
     };
   } catch (error) {
     console.error(`Error analyzing SEO for ${urlString}:`, error);
-    throw error;
+    
+    // Return structured error response
+    return {
+      url: urlString,
+      score: 0,
+      status: 'error',
+      error: {
+        type: error.type || 'analysis_error',
+        message: error.message || 'Failed to analyze SEO for the provided URL',
+        details: error.originalError || error.toString()
+      },
+      analyzedAt: new Date().toISOString()
+    };
   }
 }
 
@@ -424,7 +721,8 @@ async function handleSeoAnalyze(req, res) {
 }
 
 /**
- * Main API handler
+ * Main API handler - Unified to avoid exceeding serverless function limits
+ * Routes to different handlers based on the URL path and method
  */
 module.exports = async (req, res) => {
   // Add CORS headers
@@ -467,22 +765,39 @@ module.exports = async (req, res) => {
     res.on('finish', clearRequestTimeout);
     res.on('close', clearRequestTimeout);
     
-    // Route based on path
-    if (path === '/v2/health' || path === '/health') {
+    // Simplified routing based on path and HTTP method
+    // Health check endpoint
+    if (path === '/v2/health' || path === '/health' || path === '/api/health') {
       return await handleHealthCheck(req, res);
-    } else if (path === '/v2/seo-analyze' || path === '/seo-analyze' || path === '/api/real-seo-audit') {
+    }
+    
+    // SEO analysis endpoint - combined to serve all analysis requests
+    if (path === '/v2/seo-analyze' || path === '/seo-analyze' || path === '/api/real-seo-audit' || 
+        path === '/api/seo-analyze' || path === '/analyze') {
       return await handleSeoAnalyze(req, res);
-    } else if (path === '/' || path === '' || path === '/api' || path === '/api/') {
-      // Root path - return API info
+    }
+    
+    // Basic audit endpoint - route to the same analyzer for simplicity
+    if (path === '/basic-audit' || path === '/api/basic-audit') {
+      // Extract URL from query parameters for GET requests
+      if (req.method === 'GET' && req.query.url) {
+        req.body = { url: req.query.url };
+      }
+      return await handleSeoAnalyze(req, res);
+    }
+    
+    // Root path - return API info
+    if (path === '/' || path === '' || path === '/api' || path === '/api/') {
       return res.status(200).json({
         status: 'ok',
         message: 'Marden SEO Audit API',
         version: 'v2',
-        endpoints: [
-          '/v2/health',
-          '/seo-analyze',
-          '/v2/seo-analyze'
-        ],
+        endpoints: {
+          health: '/api/health',
+          basic: '/api/basic-audit?url=example.com',
+          seo: '/api/seo-analyze?url=example.com',
+          real: '/api/real-seo-audit?url=example.com'
+        },
         timestamp: new Date().toISOString()
       });
     }
