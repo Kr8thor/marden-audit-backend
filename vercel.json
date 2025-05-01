@@ -8,18 +8,18 @@
       "maxDuration": 30
     }
   },
-  "routes": [
-    { "src": "/health", "dest": "/api/index.js" },
-    { "src": "/v2/health", "dest": "/api/index.js" },
-    { "src": "/seo-analyze", "dest": "/api/index.js" },
-    { "src": "/v2/seo-analyze", "dest": "/api/index.js" },
-    { "src": "/api/seo-analyze", "dest": "/api/index.js" },
-    { "src": "/api/real-seo-audit", "dest": "/api/index.js" },
-    { "src": "/api/basic-audit", "dest": "/api/index.js" },
-    { "src": "/api/health", "dest": "/api/index.js" },
-    { "src": "/analyze", "dest": "/api/index.js" },
-    { "src": "/basic-audit", "dest": "/api/index.js" },
-    { "src": "/(.*)", "dest": "/api/index.js" }
+  "rewrites": [
+    { "source": "/health", "destination": "/api/index.js" },
+    { "source": "/v2/health", "destination": "/api/index.js" },
+    { "source": "/seo-analyze", "destination": "/api/index.js" },
+    { "source": "/v2/seo-analyze", "destination": "/api/index.js" },
+    { "source": "/api/seo-analyze", "destination": "/api/index.js" },
+    { "source": "/api/real-seo-audit", "destination": "/api/index.js" },
+    { "source": "/api/basic-audit", "destination": "/api/index.js" },
+    { "source": "/api/health", "destination": "/api/index.js" },
+    { "source": "/analyze", "destination": "/api/index.js" },
+    { "source": "/basic-audit", "destination": "/api/index.js" },
+    { "source": "/(.*)", "destination": "/api/index.js" }
   ],
   "headers": [
     {
