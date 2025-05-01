@@ -30,10 +30,18 @@ const url = require('url');
 
 // Add CORS headers
 function addCorsHeaders(res) {
+  // Set CORS headers to allow all origins for now (can be restricted later)
   res.setHeader('Access-Control-Allow-Credentials', true);
   res.setHeader('Access-Control-Allow-Origin', '*');
   res.setHeader('Access-Control-Allow-Methods', 'GET,OPTIONS,PATCH,DELETE,POST,PUT');
   res.setHeader('Access-Control-Allow-Headers', 'X-CSRF-Token, X-Requested-With, Accept, Accept-Version, Content-Length, Content-MD5, Content-Type, Date, X-Api-Version, Origin, Cache-Control');
+  
+  // Add extra security headers
+  res.setHeader('X-Content-Type-Options', 'nosniff');
+  res.setHeader('X-XSS-Protection', '1; mode=block');
+  
+  // Log CORS setup for debugging
+  console.log('CORS headers added to response');
 }
 
 /**
