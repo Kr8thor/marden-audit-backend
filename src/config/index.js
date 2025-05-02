@@ -25,7 +25,7 @@ const config = {
   
   // Crawling settings
   crawler: {
-    maxPages: parseInt(process.env.MAX_PAGES_PER_CRAWL || '100', 10),
+    maxPages: parseInt(process.env.MAX_PAGES_PER_CRAWL || '20', 10), // Default changed from 100 to 20
     depth: parseInt(process.env.CRAWL_DEPTH || '3', 10),
     timeout: parseInt(process.env.CRAWL_TIMEOUT || '30000', 10),
     userAgent: process.env.USER_AGENT || 'Marden SEO Audit Bot',
