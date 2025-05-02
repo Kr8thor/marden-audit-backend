@@ -864,6 +864,12 @@ module.exports = async (req, res) => {
       return await handleSeoAnalyze(req, res);
     }
     
+    // Site Audit endpoint - added route to use the existing site.js handler
+    if (path === '/submit-site-audit' || path === '/api/submit-site-audit' || path === '/api/site-audit') {
+      console.log('Handling site audit request - uses multi-page crawler');
+      return await require('./audit/site.js')(req, res);
+    }
+    
     // Basic audit endpoint - route to the same analyzer for simplicity
     if (path === '/basic-audit' || path === '/api/basic-audit') {
       // Extract URL from query parameters for GET requests
@@ -883,7 +889,8 @@ module.exports = async (req, res) => {
           health: '/api/health',
           basic: '/api/basic-audit?url=example.com',
           seo: '/api/seo-analyze?url=example.com',
-          real: '/api/real-seo-audit?url=example.com'
+          real: '/api/real-seo-audit?url=example.com',
+          site: '/submit-site-audit'
         },
         timestamp: new Date().toISOString()
       });
