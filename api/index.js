@@ -890,7 +890,7 @@ module.exports = async (req, res) => {
           basic: '/api/basic-audit?url=example.com',
           seo: '/api/seo-analyze?url=example.com',
           real: '/api/real-seo-audit?url=example.com',
-          site: '/submit-site-audit'
+          site: '/submit-site-audit' // Added the site-wide endpoint
         },
         timestamp: new Date().toISOString()
       });
