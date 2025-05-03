@@ -1,5 +1,4 @@
-// Unified API endpoint for SEO audit to stay under Vercel's Hobby plan limits
-// This consolidates multiple endpoints into a single serverless function
+// Batch URL SEO Audit implementation
 const axios = require('axios');
 const cheerio = require('cheerio');
 const url = require('url');
@@ -8,9 +7,9 @@ const url = require('url');
 let redis;
 try {
   redis = require('./lib/redis');
-  console.log('Redis client imported successfully');
+  console.log('Redis client imported successfully for batch audit');
 } catch (error) {
-  console.warn('Redis client not available:', error.message);
+  console.warn('Redis client not available for batch audit:', error.message);
   // Provide fallback empty implementation
   redis = {
     getCache: async () => null,
@@ -20,22 +19,6 @@ try {
     generateCacheKey: () => '',
     isRedisConfigured: false
   };
-}
-
-// Add CORS headers
-function addCorsHeaders(res) {
-  // Set CORS headers to allow all origins for now (can be restricted later)
-  res.setHeader('Access-Control-Allow-Credentials', true);
-  res.setHeader('Access-Control-Allow-Origin', '*');
-  res.setHeader('Access-Control-Allow-Methods', 'GET,OPTIONS,PATCH,DELETE,POST,PUT');
-  res.setHeader('Access-Control-Allow-Headers', 'X-CSRF-Token, X-Requested-With, Accept, Accept-Version, Content-Length, Content-MD5, Content-Type, Date, X-Api-Version, Origin, Cache-Control');
-  
-  // Add extra security headers
-  res.setHeader('X-Content-Type-Options', 'nosniff');
-  res.setHeader('X-XSS-Protection', '1; mode=block');
-  
-  // Log CORS setup for debugging
-  console.log('CORS headers added to response');
 }
 
 /**
@@ -63,66 +46,77 @@ function normalizeUrl(url) {
 }
 
 /**
- * Handler for health check endpoint
+ * Generate a standardized cache key for batch SEO audits
+ * @param {string[]} urls URLs being audited
+ * @returns {string} Cache key
  */
-async function handleHealthCheck(req, res) {
-  try {
-    // Check Redis health if configured
-    let redisStatus = {
-      status: 'disabled',
-      message: 'Redis not configured'
-    };
-    
-    if (redis.isRedisConfigured) {
-      try {
-        const redisHealth = await redis.checkHealth();
-        redisStatus = {
-          status: redisHealth ? 'ok' : 'error',
-          message: redisHealth ? 'Connected' : 'Connection failed'
-        };
-      } catch (error) {
-        redisStatus = {
-          status: 'error',
-          message: `Connection failed: ${error.message}`
-        };
-      }
-    }
-    
-    return res.status(200).json({
-      status: 'ok',
-      version: 'v2',
-      message: 'Marden SEO Audit API is operational',
-      components: {
-        api: {
-          status: 'ok'
-        },
-        redis: redisStatus
-      },
-      timestamp: new Date().toISOString()
-    });
-  } catch (error) {
-    console.error('Health check error:', error);
-    return res.status(500).json({
-      status: 'error',
-      message: 'Health check failed',
-      error: error.message,
-      timestamp: new Date().toISOString()
-    });
-  }
+function generateBatchCacheKey(urls) {
+  // Sort URLs for consistent caching regardless of order
+  const sortedUrls = [...urls].sort();
+  
+  // Create a hash of the URLs
+  const urlsString = sortedUrls.join(',');
+  const hash = require('crypto')
+    .createHash('md5')
+    .update(urlsString)
+    .digest('hex');
+  
+  return `batch-seo-audit:${hash}`;
+}
+
+/**
+ * Generate individual cache keys for each URL
+ * @param {string} url URL being audited
+ * @returns {string} Cache key
+ */
+function generateUrlCacheKey(url) {
+  // Normalize URL for consistent caching
+  const normalizedUrl = normalizeUrl(url).toLowerCase();
+  
+  return `seo-audit:${normalizedUrl}`;
 }
 
 /**
  * Analyze SEO for a specific URL
+ * @param {string} urlString URL to analyze 
+ * @returns {Promise<Object>} Analysis results
  */
-async function analyzeSeo(urlString) {
+async function analyzeSingleUrl(urlString) {
+  const normalizedUrl = normalizeUrl(urlString);
+  console.log(`Analyzing SEO for ${normalizedUrl}`);
+  
+  // Try to get cached result first
+  if (redis.isRedisConfigured) {
+    try {
+      const cacheKey = generateUrlCacheKey(normalizedUrl);
+      console.log(`Checking cache for key: ${cacheKey}`);
+      
+      const cachedResults = await redis.getCache(cacheKey);
+      
+      if (cachedResults) {
+        console.log(`Cache hit for ${normalizedUrl}`);
+        return {
+          ...cachedResults,
+          cached: true,
+          cachedAt: cachedResults.timestamp || new Date().toISOString()
+        };
+      }
+      
+      console.log(`Cache miss for ${normalizedUrl}, performing analysis`);
+    } catch (error) {
+      console.error('Error checking cache:', error);
+      // Continue with analysis if cache check fails
+    }
+  }
+  
   try {
-    console.log(`Analyzing SEO for ${urlString}`);
+    // Start performance measurement
     const startTime = Date.now();
     
     // Fetch the page with appropriate error handling
     let response;
     try {
-      response = await axios.get(urlString, {
+      response = await axios.get(normalizedUrl, {
         timeout: 15000,
         headers: {
           'User-Agent': 'MardenSEOAuditBot/1.0',
@@ -167,10 +161,17 @@ async function analyzeSeo(urlString) {
         }
       }
       
-      throw {
-        type: errorType,
-        message: errorMessage,
-        originalError: error.message
+      return {
+        url: normalizedUrl,
+        timestamp: new Date().toISOString(),
+        error: {
+          type: errorType,
+          message: errorMessage,
+          originalError: error.message
+        },
+        status: 'error',
+        score: 0,
+        analyzedAt: new Date().toISOString()
       };
     }
     
@@ -243,10 +244,10 @@ async function analyzeSeo(urlString) {
       }
       
       try {
-        const linkUrl = new URL(href, urlString);
+        const linkUrl = new URL(href, normalizedUrl);
         const hasNofollow = $(el).attr('rel')?.includes('nofollow') || false;
         
-        if (linkUrl.hostname === new URL(urlString).hostname) {
+        if (linkUrl.hostname === new URL(normalizedUrl).hostname) {
           links.internal++;
         } else {
           links.external++;
@@ -574,9 +575,9 @@ async function analyzeSeo(urlString) {
     const endTime = Date.now();
     const analysisTime = endTime - startTime;
     
-    // Return analysis results in V2 API format
-    return {
-      url: urlString,
+    // Build the result object
+    const result = {
+      url: normalizedUrl,
       score,
       status,
       criticalIssuesCount,
@@ -660,266 +661,197 @@ async function analyzeSeo(urlString) {
           parseInt(response.headers['x-response-time']) : 
           null
       },
+      timestamp: new Date().toISOString(),
       analyzedAt: new Date().toISOString()
     };
+    
+    // Cache the result in Redis
+    if (redis.isRedisConfigured) {
+      try {
+        const cacheKey = generateUrlCacheKey(normalizedUrl);
+        await redis.setCache(cacheKey, result, 86400); // Cache for 24 hours
+        console.log(`Cached results for ${normalizedUrl}`);
+      } catch (error) {
+        console.error('Error caching results:', error);
+        // Continue without caching if it fails
+      }
+    }
+    
+    return result;
   } catch (error) {
-    console.error(`Error analyzing SEO for ${urlString}:`, error);
+    console.error(`Error analyzing SEO for ${normalizedUrl}:`, error);
     
     // Return structured error response
     return {
-      url: urlString,
+      url: normalizedUrl,
       score: 0,
       status: 'error',
       error: {
-        type: error.type || 'analysis_error',
-        message: error.message || 'Failed to analyze SEO for the provided URL',
-        details: error.originalError || error.toString()
+        type: 'analysis_error',
+        message: 'Failed to analyze SEO for the provided URL',
+        details: error.toString()
       },
+      timestamp: new Date().toISOString(),
       analyzedAt: new Date().toISOString()
     };
   }
 }
 
 /**
- * Handle SEO analysis endpoint
+ * Handle batch SEO analysis
+ * @param {Object} req Express request
+ * @param {Object} res Express response
  */
-async function handleSeoAnalyze(req, res) {
+async function handleBatchAudit(req, res) {
   try {
-    // Extract request body
-    let requestBody = req.body;
+    // Extract URLs from request body
+    const { urls } = req.body;
     
-    // Parse body if it's a string
-    if (typeof requestBody === 'string') {
-      try {
-        requestBody = JSON.parse(requestBody);
-      } catch (e) {
-        return res.status(400).json({
-          status: 'error',
-          message: 'Invalid JSON in request body',
-          timestamp: new Date().toISOString()
-        });
-      }
-    }
-    
-    // Get URL and options from request body
-    const { url, options } = requestBody;
-    
-    if (!url) {
+    if (!urls || !Array.isArray(urls) || urls.length === 0) {
       return res.status(400).json({
         status: 'error',
-        message: 'URL is required',
+        message: 'Please provide an array of URLs to analyze',
         timestamp: new Date().toISOString()
       });
     }
     
-    // Normalize and validate URL format
-    const normalizedUrl = normalizeUrl(url);
-    try {
-      new URL(normalizedUrl);
-    } catch (error) {
-      return res.status(400).json({
-        status: 'error',
-        message: 'Invalid URL provided',
-        timestamp: new Date().toISOString()
-      });
-    }
+    // Limit the number of URLs to prevent abuse
+    const MAX_URLS = 20;
+    const urlsToProcess = urls.slice(0, MAX_URLS);
     
-    // Check for cached results if Redis is configured
-    let analysisResults;
-    let cached = false;
-    let cachedAt = null;
+    // Normalize URLs
+    const normalizedUrls = urlsToProcess.map(url => normalizeUrl(url));
     
+    // Check for cached batch result
+    let cachedBatchResult = null;
     if (redis.isRedisConfigured) {
       try {
-        // Generate cache key from URL and options
-        const cacheKey = redis.generateCacheKey(normalizedUrl, options || {});
-        console.log(`Checking cache for key: ${cacheKey}`);
+        const batchCacheKey = generateBatchCacheKey(normalizedUrls);
+        console.log(`Checking batch cache for key: ${batchCacheKey}`);
         
-        // Try to get cached results
-        const cachedResults = await redis.getCache(cacheKey);
+        cachedBatchResult = await redis.getCache(batchCacheKey);
         
-        if (cachedResults) {
-          console.log(`Cache hit for ${normalizedUrl}`);
-          analysisResults = cachedResults.data;
-          cached = true;
-          cachedAt = cachedResults.timestamp;
-        } else {
-          console.log(`Cache miss for ${normalizedUrl}, performing analysis`);
+        if (cachedBatchResult) {
+          console.log(`Batch cache hit for ${normalizedUrls.length} URLs`);
+          return res.status(200).json({
+            status: 'success',
+            message: 'Batch SEO analysis retrieved from cache',
+            totalUrls: normalizedUrls.length,
+            timestamp: new Date().toISOString(),
+            cached: true,
+            cachedAt: cachedBatchResult.timestamp || new Date().toISOString(),
+            results: cachedBatchResult.results
+          });
         }
+        
+        console.log(`Batch cache miss, performing analysis`);
       } catch (error) {
-        console.error('Error checking cache:', error);
+        console.error('Error checking batch cache:', error);
         // Continue with analysis if cache check fails
       }
     }
     
-    // If no cached results, perform analysis
-    if (!analysisResults) {
-      console.log(`Performing SEO analysis for ${normalizedUrl}`);
-      analysisResults = await analyzeSeo(normalizedUrl, options || {});
-      
-      // Cache successful results if Redis is configured
-      if (redis.isRedisConfigured && !analysisResults.error) {
+    // Try to get individual cached results first to avoid unnecessary network requests
+    const batchResults = [];
+    const uncachedUrls = [];
+    
+    if (redis.isRedisConfigured) {
+      for (const url of normalizedUrls) {
         try {
-          const cacheKey = redis.generateCacheKey(normalizedUrl, options || {});
-          // Cache for 24 hours (86400 seconds)
-          await redis.setCache(cacheKey, {
-            data: analysisResults,
-            timestamp: new Date().toISOString()
-          }, 86400);
-          console.log(`Cached results for ${normalizedUrl}`);
+          const cacheKey = generateUrlCacheKey(url);
+          const cachedResult = await redis.getCache(cacheKey);
+          
+          if (cachedResult) {
+            console.log(`Individual cache hit for ${url}`);
+            batchResults.push({
+              ...cachedResult,
+              cached: true,
+              cachedAt: cachedResult.timestamp || new Date().toISOString()
+            });
+          } else {
+            uncachedUrls.push(url);
+          }
         } catch (error) {
-          console.error('Error caching results:', error);
-          // Continue without caching if it fails
+          console.error(`Error checking cache for ${url}:`, error);
+          uncachedUrls.push(url);
+        }
+      }
+    } else {
+      // If Redis is not configured, process all URLs
+      uncachedUrls.push(...normalizedUrls);
+    }
+    
+    console.log(`Processing ${uncachedUrls.length} uncached URLs out of ${normalizedUrls.length} total URLs`);
+    
+    // Process uncached URLs in parallel with rate limiting
+    // Limit to 5 concurrent requests to avoid overwhelming the servers
+    const concurrencyLimit = 5;
+    
+    // Split into chunks and process sequentially to avoid overwhelming servers
+    for (let i = 0; i < uncachedUrls.length; i += concurrencyLimit) {
+      const chunk = uncachedUrls.slice(i, i + concurrencyLimit);
+      
+      // Process this chunk in parallel
+      const chunkPromises = chunk.map(url => analyzeSingleUrl(url));
+      const chunkResults = await Promise.allSettled(chunkPromises);
+      
+      // Add results to batch results
+      for (let j = 0; j < chunkResults.length; j++) {
+        const result = chunkResults[j];
+        if (result.status === 'fulfilled') {
+          batchResults.push(result.value);
+        } else {
+          // Handle rejected promises
+          batchResults.push({
+            url: chunk[j],
+            score: 0,
+            status: 'error',
+            error: {
+              type: 'analysis_error',
+              message: 'Analysis failed',
+              details: result.reason?.toString() || 'Unknown error'
+            },
+            timestamp: new Date().toISOString(),
+            analyzedAt: new Date().toISOString()
+          });
         }
       }
     }
     
-    // Check if analysis resulted in an error
-    if (analysisResults.error) {
-      return res.status(200).json({
-        status: 'error',
-        message: analysisResults.error.message || 'SEO analysis encountered an error',
-        url: normalizedUrl,
-        cached: false,
-        timestamp: new Date().toISOString(),
-        data: analysisResults
-      });
+    // Cache the batch result for future use
+    if (redis.isRedisConfigured) {
+      try {
+        const batchCacheKey = generateBatchCacheKey(normalizedUrls);
+        await redis.setCache(batchCacheKey, {
+          timestamp: new Date().toISOString(),
+          results: batchResults
+        }, 86400); // Cache for 24 hours
+        console.log(`Cached batch results for ${normalizedUrls.length} URLs`);
+      } catch (error) {
+        console.error('Error caching batch results:', error);
+        // Continue without caching if it fails
+      }
     }
     
-    // Return successful analysis results
+    // Return the combined results
     return res.status(200).json({
-      status: 'ok',
-      message: cached ? 'SEO analysis retrieved from cache' : 'SEO analysis completed',
-      url: normalizedUrl,
-      cached,
-      cachedAt,
+      status: 'success',
+      message: 'Batch SEO analysis completed',
+      totalUrls: normalizedUrls.length,
       timestamp: new Date().toISOString(),
-      data: analysisResults
+      cached: false,
+      results: batchResults
     });
   } catch (error) {
-    console.error('Error performing SEO analysis:', error);
+    console.error('Error handling batch audit:', error);
+    
     return res.status(500).json({
       status: 'error',
-      message: 'Failed to perform SEO analysis',
+      message: 'Failed to perform batch SEO analysis',
       error: error.message || 'Unknown error',
       timestamp: new Date().toISOString()
     });
   }
 }
 
-/**
- * Main API handler - Unified to avoid exceeding serverless function limits
- * Routes to different handlers based on the URL path and method
- */
-module.exports = async (req, res) => {
-  // Add CORS headers
-  addCorsHeaders(res);
-  
-  // Handle OPTIONS request for CORS preflight
-  if (req.method === 'OPTIONS') {
-    return res.status(200).end();
-  }
-  
-  try {
-    // Parse URL and extract path
-    const parsedUrl = url.parse(req.url, true);
-    const path = parsedUrl.pathname;
-    
-    console.log(`Request received for path: ${path}, method: ${req.method}`);
-    
-    // Get the query parameters
-    req.query = parsedUrl.query;
-    
-    // Global request timeout to prevent hanging serverless functions
-    const requestTimeout = setTimeout(() => {
-      console.error(`Request timeout for ${path}`);
-      if (!res.headersSent) {
-        return res.status(503).json({
-          status: 'error',
-          message: 'Request timed out',
-          path,
-          timestamp: new Date().toISOString()
-        });
-      }
-    }, 25000); // 25 second timeout (just under Vercel's 30s limit)
-    
-    // Define a function to clear the timeout when the request completes
-    const clearRequestTimeout = () => {
-      clearTimeout(requestTimeout);
-    };
-    
-    // Add event listeners to clear the timeout when the response is sent
-    res.on('finish', clearRequestTimeout);
-    res.on('close', clearRequestTimeout);
-    
-    // Simplified routing based on path and HTTP method
-    // Health check endpoint
-    if (path === '/v2/health' || path === '/health' || path === '/api/health') {
-      return await handleHealthCheck(req, res);
-    }
-    
-    // SEO analysis endpoint - combined to serve all analysis requests
-    if (path === '/v2/seo-analyze' || path === '/seo-analyze' || path === '/api/real-seo-audit' || 
-        path === '/api/seo-analyze' || path === '/analyze') {
-      return await handleSeoAnalyze(req, res);
-    }
-    
-    // Site Audit endpoint - added route to use the existing site.js handler
-    if (path === '/submit-site-audit' || path === '/api/submit-site-audit' || path === '/api/site-audit') {
-      console.log('Handling site audit request - uses multi-page crawler');
-      return await require('./audit/site.js')(req, res);
-    }
-    
-    // Batch Audit endpoint - for analyzing multiple URLs at once
-    if (path === '/batch-audit' || path === '/api/batch-audit') {
-      console.log('Handling batch audit request for multiple URLs');
-      return await require('./batch-audit.js')(req, res);
-    }
-    
-    // Basic audit endpoint - route to the same analyzer for simplicity
-    if (path === '/basic-audit' || path === '/api/basic-audit') {
-      // Extract URL from query parameters for GET requests
-      if (req.method === 'GET' && req.query.url) {
-        req.body = { url: req.query.url };
-      }
-      return await handleSeoAnalyze(req, res);
-    }
-    
-    // Root path - return API info
-    if (path === '/' || path === '' || path === '/api' || path === '/api/') {
-      return res.status(200).json({
-        status: 'ok',
-        message: 'Marden SEO Audit API',
-        version: 'v2',
-        endpoints: {
-          health: '/api/health',
-          basic: '/api/basic-audit?url=example.com',
-          seo: '/api/seo-analyze?url=example.com',
-          batch: '/api/batch-audit',
-          real: '/api/real-seo-audit?url=example.com',
-          site: '/submit-site-audit'
-        },
-        timestamp: new Date().toISOString()
-      });
-    }
-    
-    // Return 404 for unmatched routes
-    return res.status(404).json({
-      status: 'error',
-      message: `Endpoint not found: ${path}`,
-      timestamp: new Date().toISOString()
-    });
-  } catch (error) {
-    console.error('Error handling request:', error);
-    
-    // Provide safe error response with appropriate status code
-    const statusCode = error.statusCode || 500;
-    
-    return res.status(statusCode).json({
-      status: 'error',
-      message: 'Internal server error',
-      error: process.env.NODE_ENV === 'production' ? 'An unexpected error occurred' : error.message,
-      timestamp: new Date().toISOString()
-    });
-  }
-};
+module.exports = handleBatchAudit;
