@@ -547,19 +547,29 @@ async function processPageAudit(job) {
 // Process site audit job
 async function processSiteAudit(job) {
   const { url, options = {} } = job.params;
-  const maxPages = Math.min(options.maxPages || 10, 100);
-  const crawlDepth = Math.min(options.crawlDepth || 2, 5);
+  const maxPages = Math.min(options.maxPages || 20, 100); // Default to 20 pages
+  const crawlDepth = Math.min(options.depth || 3, 5);     // Default to depth 3
+  
+  // Add detailed logging
+  console.log(`Starting site audit for ${url} with max pages: ${maxPages}, depth: ${crawlDepth}`);
   
   // Update progress
   await updateJob(job.id, {
-    progress: 10,
+    progress: 5,
     message: `Starting site crawl: max ${maxPages} pages, depth ${crawlDepth}`
   });
   
   try {
-    // Track progress for each step
-    const totalSteps = maxPages + 2; // Crawling + aggregation + final step
-    let currentStep = 0;
+    // Track crawled URLs to avoid duplicates
+    const crawledUrls = new Set();
+    // Queue of URLs to crawl
+    const urlQueue = [];
+    // Store results for each page
+    const pageResults = [];
+    // Store issues for aggregation
+    const allIssues = [];
+    // Track domains we've crawled recently to prevent rate limiting
+    const domainAccesses = new Map();
     
     // First, analyze the main page
     const mainPageResult = await processPageAudit({
@@ -567,26 +577,255 @@ async function processSiteAudit(job) {
       params: { url }
     });
     
-    currentStep++;
-    await updateJob(job.id, {
-      progress: Math.min(90, Math.round((currentStep / totalSteps) * 100)),
-      message: `Analyzed main page, crawling site (1/${maxPages})`
+    // Add main page to crawled set
+    crawledUrls.add(url);
+    pageResults.push({
+      url,
+      score: mainPageResult.score,
+      title: mainPageResult.pageData.title.text,
+      criticalIssuesCount: mainPageResult.criticalIssuesCount,
+      totalIssuesCount: mainPageResult.totalIssuesCount,
+      pageAnalysis: mainPageResult.pageData
     });
     
-    // For simplicity in the current implementation, we'll just return the main page analysis
-    // A complete implementation would crawl the site and analyze multiple pages
+    // Add issues from main page to all issues
+    Object.values(mainPageResult.categories).forEach(category => {
+      allIssues.push(...category.issues);
+    });
     
-    // In a real implementation, this is where the site crawling would happen
-    // For now we'll simulate it by updating progress
-    for (let i = 1; i < Math.min(5, maxPages); i++) {
-      // Simulate processing delay
-      await new Promise(resolve => setTimeout(resolve, 500));
+    // Extract links from main page and add to queue
+    if (mainPageResult.pageData && mainPageResult.pageData.links) {
+      const { internalCount, externalCount, totalCount } = mainPageResult.pageData.links;
       
-      currentStep++;
-      await updateJob(job.id, {
-        progress: Math.min(90, Math.round((currentStep / totalSteps) * 100)),
-        message: `Crawling site (${i+1}/${maxPages})`
+      // If we have internal links data but not the actual URLs, we need to fetch them
+      if (internalCount > 0 && !mainPageResult.pageData.links.internalUrls) {
+        // In this case, re-fetch the page to extract actual link URLs
+        try {
+          const response = await axios.get(url, {
+            timeout: 15000,
+            headers: {
+              'User-Agent': 'MardenSEOAuditBot/1.0'
+            }
+          });
+          
+          const $ = cheerio.load(response.data);
+          
+          // Extract all links
+          $('a[href]').each((i, el) => {
+            const href = $(el).attr('href');
+            
+            if (!href || href.startsWith('#') || href.startsWith('javascript:')) {
+              return;
+            }
+            
+            try {
+              const linkUrl = new URL(href, url);
+              
+              // Only add internal links to the queue
+              if (linkUrl.hostname === new URL(url).hostname) {
+                const normalizedLink = normalizeUrl(linkUrl.href);
+                if (!crawledUrls.has(normalizedLink)) {
+                  urlQueue.push({
+                    url: normalizedLink,
+                    depth: 1
+                  });
+                }
+              }
+            } catch (error) {
+              // Skip malformed URLs
+              console.warn(`Skipping malformed URL: ${href}`);
+            }
+          });
+        } catch (error) {
+          console.error(`Error fetching links from ${url}:`, error);
+        }
+      }
+    }
+    
+    // Update progress
+    await updateJob(job.id, {
+      progress: 10,
+      message: `Analyzed main page, found ${urlQueue.length} links to crawl`
+    });
+    
+    console.log(`Analyzed main page ${url}, found ${urlQueue.length} links to crawl`);
+    
+    // Process queue with optimal batching for serverless environment
+    // We'll process 3 pages at a time to avoid overwhelming the server
+    const BATCH_SIZE = 3;
+    
+    // Function to normalize URL for consistency
+    function normalizeUrl(inputUrl) {
+      try {
+        const parsedUrl = new URL(inputUrl);
+        
+        // Remove trailing slashes
+        let path = parsedUrl.pathname;
+        if (path.endsWith('/') && path.length > 1) {
+          path = path.slice(0, -1);
+        }
+        
+        // Remove common tracking parameters
+        parsedUrl.searchParams.delete('utm_source');
+        parsedUrl.searchParams.delete('utm_medium');
+        parsedUrl.searchParams.delete('utm_campaign');
+        
+        // Reconstruct URL without fragments
+        parsedUrl.pathname = path;
+        parsedUrl.hash = '';
+        
+        return parsedUrl.toString();
+      } catch (error) {
+        return inputUrl;
+      }
+    }
+    
+    // Function to determine if we should throttle requests to a domain
+    function shouldThrottle(inputUrl) {
+      try {
+        const domain = new URL(inputUrl).hostname;
+        const now = Date.now();
+        const lastAccess = domainAccesses.get(domain) || 0;
+        
+        // If accessed within the last 2 seconds, throttle
+        if (now - lastAccess < 2000) {
+          return true;
+        }
+        
+        // Update last access time
+        domainAccesses.set(domain, now);
+        return false;
+      } catch (error) {
+        return false;
+      }
+    }
+    
+    // Process the queue until we've reached max pages or the queue is empty
+    let currentStep = 1; // We already processed the main page
+    
+    for (let i = 0; i < urlQueue.length && crawledUrls.size < maxPages; i += BATCH_SIZE) {
+      // Get a batch of URLs to process
+      const batch = urlQueue.slice(i, i + BATCH_SIZE);
+      console.log(`Processing batch ${Math.floor(i/BATCH_SIZE) + 1}, URLs: ${batch.map(item => item.url).join(', ')}`);
+      
+      // Process each URL in the batch with individual error handling
+      const batchPromises = batch.map(async ({ url: pageUrl, depth }) => {
+        // Skip if we've already crawled this URL or reached max pages
+        if (crawledUrls.has(pageUrl) || crawledUrls.size >= maxPages) {
+          return null;
+        }
+        
+        // Skip if depth exceeds the limit
+        if (depth > crawlDepth) {
+          return null;
+        }
+        
+        // Check if we need to throttle
+        if (shouldThrottle(pageUrl)) {
+          await new Promise(resolve => setTimeout(resolve, 2000));
+        }
+        
+        try {
+          // Mark as crawled early to prevent duplicates
+          crawledUrls.add(pageUrl);
+          
+          // Process the page
+          const pageResult = await processPageAudit({
+            id: `${job.id}:page${crawledUrls.size}`,
+            params: { url: pageUrl }
+          });
+          
+          // Add result to the list
+          pageResults.push({
+            url: pageUrl,
+            score: pageResult.score,
+            title: pageResult.pageData.title.text,
+            criticalIssuesCount: pageResult.criticalIssuesCount,
+            totalIssuesCount: pageResult.totalIssuesCount,
+            pageAnalysis: pageResult.pageData
+          });
+          
+          // Add issues from this page to all issues
+          Object.values(pageResult.categories).forEach(category => {
+            allIssues.push(...category.issues);
+          });
+          
+          // Extract new links from this page and add to queue
+          if (pageResult.pageData && pageResult.pageData.links) {
+            const { internalCount } = pageResult.pageData.links;
+            
+            // If we have internal links data but not the actual URLs, we need to fetch them
+            if (internalCount > 0 && depth < crawlDepth) {
+              // Fetch the page to extract actual link URLs
+              try {
+                const response = await axios.get(pageUrl, {
+                  timeout: 15000,
+                  headers: {
+                    'User-Agent': 'MardenSEOAuditBot/1.0'
+                  }
+                });
+                
+                const $ = cheerio.load(response.data);
+                
+                // Extract all links
+                $('a[href]').each((i, el) => {
+                  const href = $(el).attr('href');
+                  
+                  if (!href || href.startsWith('#') || href.startsWith('javascript:')) {
+                    return;
+                  }
+                  
+                  try {
+                    const linkUrl = new URL(href, pageUrl);
+                    
+                    // Only add internal links to the queue
+                    if (linkUrl.hostname === new URL(url).hostname) {
+                      const normalizedLink = normalizeUrl(linkUrl.href);
+                      if (!crawledUrls.has(normalizedLink)) {
+                        urlQueue.push({
+                          url: normalizedLink,
+                          depth: depth + 1
+                        });
+                      }
+                    }
+                  } catch (error) {
+                    // Skip malformed URLs
+                  }
+                });
+              } catch (error) {
+                console.error(`Error fetching links from ${pageUrl}:`, error);
+              }
+            }
+          }
+          
+          return pageResult;
+        } catch (error) {
+          console.error(`Error crawling ${pageUrl}:`, error);
+          
+          // Return error result instead of throwing
+          return {
+            url: pageUrl,
+            score: 0,
+            status: 'error',
+            error: error.message || 'Failed to analyze URL'
+          };
+        }
       });
+      
+      // Wait for all promises in the batch
+      await Promise.all(batchPromises.filter(Boolean));
+      
+      // Update progress
+      currentStep += batch.length;
+      await updateJob(job.id, {
+        progress: Math.min(90, Math.round((currentStep / maxPages) * 100)),
+        message: `Crawled ${crawledUrls.size}/${maxPages} pages`
+      });
+      
+      console.log(`Completed batch, crawled ${crawledUrls.size}/${maxPages} pages so far`);
+      
+      // Add small delay between batches to prevent rate limiting
+      await new Promise(resolve => setTimeout(resolve, 1000));
     }
     
     // Update progress for aggregation
@@ -595,50 +834,54 @@ async function processSiteAudit(job) {
       message: 'Aggregating site metrics'
     });
     
-    // Return site analysis with the main page data
+    console.log(`Site crawl completed, analyzed ${pageResults.length} pages`);
+    
+    // Aggregate data from all pages
+    
+    // Calculate average score
+    const totalScore = pageResults.reduce((sum, page) => sum + page.score, 0);
+    const averageScore = Math.round(totalScore / pageResults.length);
+    
+    // Find common issues
+    const issueFrequency = {};
+    
+    allIssues.forEach(issue => {
+      const issueType = issue.type;
+      if (!issueFrequency[issueType]) {
+        issueFrequency[issueType] = {
+          type: issueType,
+          frequency: 0,
+          severity: issue.severity,
+          impact: issue.impact,
+          recommendation: issue.recommendation
+        };
+      }
+      issueFrequency[issueType].frequency++;
+    });
+    
+    // Sort issues by frequency
+    const commonIssues = Object.values(issueFrequency)
+      .sort((a, b) => b.frequency - a.frequency)
+      .slice(0, 10); // Top 10 issues
+    
+    // Calculate overall critical issues and total issues
+    const totalCriticalIssues = pageResults.reduce((sum, page) => sum + page.criticalIssuesCount, 0);
+    const totalIssuesCount = pageResults.reduce((sum, page) => sum + page.totalIssuesCount, 0);
+    
+    // Return site analysis with all page data
     return {
       url,
-      pagesAnalyzed: 1,
+      pagesAnalyzed: pageResults.length,
       maxPages,
       crawlDepth,
-      score: mainPageResult.score,
-      criticalIssuesCount: mainPageResult.criticalIssuesCount,
-      totalIssuesCount: mainPageResult.totalIssuesCount,
+      score: averageScore,
+      criticalIssuesCount: totalCriticalIssues,
+      totalIssuesCount: totalIssuesCount,
       siteAnalysis: {
-        averageScore: mainPageResult.score,
-        commonIssues: [
-          {
-            type: 'missing_meta_description',
-            frequency: mainPageResult.pageData.metaDescription.text ? 0 : 1,
-            severity: 'critical'
-          },
-          {
-            type: 'missing_h1',
-            frequency: mainPageResult.pageData.headings.h1Count ? 0 : 1,
-            severity: 'critical'
-          },
-          {
-            type: 'multiple_h1',
-            frequency: mainPageResult.pageData.headings.h1Count > 1 ? 1 : 0,
-            severity: 'warning'
-          },
-          {
-            type: 'missing_alt_text',
-            frequency: mainPageResult.pageData.images.withoutAlt,
-            severity: 'warning'
-          }
-        ],
-        pages: [
-          {
-            url,
-            score: mainPageResult.score,
-            title: mainPageResult.pageData.title.text,
-            criticalIssuesCount: mainPageResult.criticalIssuesCount
-          }
-        ]
+        averageScore,
+        commonIssues,
+        pages: pageResults
       },
-      categories: mainPageResult.categories,
-      recommendations: mainPageResult.recommendations,
       analyzedAt: new Date().toISOString()
     };
   } catch (error) {
