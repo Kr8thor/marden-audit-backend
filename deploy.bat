@@ -1,19 +1,13 @@
 @echo off
-echo Deploying Marden Audit Backend to GitHub and Vercel...
+REM Deploy script for Marden SEO Audit Backend to Railway
 
-echo Committing changes to GitHub...
-git add .
-git commit -m "Implement v2 API with Redis integration and job processing"
-git push origin main
+echo NOTE: Before running this script, you must manually run:
+echo 1. railway login
+echo 2. railway init (if this is the first deployment)
+echo 3. railway link (if the project is already created)
 
-echo Installing dependencies...
-call npm install
+echo Deploying Marden SEO Audit Backend to Railway...
+echo Using consolidated API endpoints with memory optimization...
 
-echo Installing vercel CLI if not already installed...
-call npm install -g vercel
-
-echo Deploying to production...
-call vercel --prod
-
-echo Deployment completed!
-pause
+REM Deploy to Railway
+railway up
