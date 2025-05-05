@@ -239,24 +239,69 @@ function generateSiteAuditCacheKey(url, options = {}) {
  * @returns {Promise<Object>} Site audit results
  */
 async function performSiteAudit(siteUrl, options = {}) {
-  console.log(`Starting site audit for ${siteUrl} with options:`, options);
-  const startTime = Date.now();
+  // RAILWAY EMERGENCY FIX: Return a simplified response without crawling
+  // This is a temporary fix to prevent high CPU usage on Railway
+  console.log(`RAILWAY EMERGENCY MODE: Simplified site audit for ${siteUrl}`);
   
+  const normalizedUrl = normalizeUrl(siteUrl);
+  
+  // Only analyze homepage
   try {
-    // Normalize site URL
-    const normalizedUrl = normalizeUrl(siteUrl);
+    // Analyze just the homepage
+    console.log(`Analyzing homepage only: ${normalizedUrl}`);
     
-    // Configure options with defaults - with reduced limits for Railway deployment
-    const auditOptions = {
-      maxPages: Math.min(options.maxPages || 10, 20), // Reduce to max 20 pages
-      maxDepth: Math.min(options.maxDepth || 2, 3),    // Reduce to max depth 3
-      concurrency: Math.min(options.concurrency || 1, 2), // Lower concurrency to avoid CPU spikes
-      timeout: options.timeout || 10000, // Lower timeout to 10 seconds
-      respectRobots: options.respectRobots !== false,
-      cacheResults: options.cacheResults !== false,
-      skipCrawl: options.skipCrawl || false,
-      customPages: options.customPages || []
+    // Make sure analyzeSeoFunction is defined and callable
+    if (typeof analyzeSeoFunction !== 'function') {
+      throw new Error('SEO analysis function is not properly defined');
+    }
+    
+    // Analyze the homepage with timeout
+    const analysisPromise = analyzeSeoFunction(normalizedUrl);
+    const timeoutPromise = new Promise((_, reject) => 
+      setTimeout(() => reject(new Error('Analysis timeout')), 15000)
+    );
+    
+    // Race the analysis against a timeout
+    const analysis = await Promise.race([analysisPromise, timeoutPromise]);
+    
+    // Create a simplified site audit result
+    return {
+      url: normalizedUrl,
+      crawlStats: {
+        startUrl: normalizedUrl,
+        baseDomain: new URL(normalizedUrl).hostname,
+        pagesDiscovered: 1,
+        pagesCrawled: 1,
+        pagesFailed: 0,
+        pagesSkipped: 0,
+        homepageOnly: true,
+        railwayEmergencyMode: true,
+        timestamp: new Date().toISOString()
+      },
+      pages: [analysis],
+      analysisStats: {
+        pagesAnalyzed: 1,
+        pagesSucceeded: 1,
+        pagesFailed: 0
+      },
+      overallScore: analysis.score,
+      overallStatus: analysis.status,
+      timestamp: new Date().toISOString()
     };
+  } catch (error) {
+    console.error('Emergency site audit failed:', error);
+    
+    return {
+      url: siteUrl,
+      error: {
+        message: `Emergency site audit failed: ${error.message}`,
+        railwayEmergencyMode: true
+      },
+      status: 'error',
+      timestamp: new Date().toISOString()
+    };
+  }
+}
     
     // Try to get from cache first
     let cachedResults = null;

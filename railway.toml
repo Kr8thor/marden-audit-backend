@@ -5,15 +5,14 @@ nixpacksConfigPath = "nixpacks.toml"
 
 [deploy]
 startCommand = "node --max-old-space-size=220 app.js"
-restartPolicyType = "on_failure"
-restartPolicyMaxRetries = 3
+restartPolicyType = "no" # Disable automatic restarts
+healthcheckPath = "/health" # Use our simplified health endpoint
+healthcheckTimeout = 30
+healthcheckInterval = 60
 
 [services.marden-backend-service]
 internal_port = 3000
-auto_stop = true
-auto_stop_timeout = 60
+auto_stop = false # Don't auto-stop the service
 memory = "256MB"
-cpu = 0.5 # Limit to 50% CPU
-health_check = "/"
-health_check_timeout = 10
-health_check_interval = 30
+cpu = 0.3 # Lower to 30% CPU
+root_directory = "."
