@@ -1,0 +1,19 @@
+# Railway configuration for memory and CPU optimization
+[build]
+builder = "nixpacks"
+nixpacksConfigPath = "nixpacks.toml"
+
+[deploy]
+startCommand = "node --max-old-space-size=220 app.js"
+restartPolicyType = "on_failure"
+restartPolicyMaxRetries = 3
+
+[services.marden-backend-service]
+internal_port = 3000
+auto_stop = true
+auto_stop_timeout = 60
+memory = "256MB"
+cpu = 0.5 # Limit to 50% CPU
+health_check = "/"
+health_check_timeout = 10
+health_check_interval = 30

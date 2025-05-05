@@ -246,12 +246,12 @@ async function performSiteAudit(siteUrl, options = {}) {
     // Normalize site URL
     const normalizedUrl = normalizeUrl(siteUrl);
     
-    // Configure options with defaults
+    // Configure options with defaults - with reduced limits for Railway deployment
     const auditOptions = {
-      maxPages: Math.min(options.maxPages || 50, 100), // Cap at 100 pages
-      maxDepth: Math.min(options.maxDepth || 3, 5),    // Cap at depth 5
-      concurrency: Math.min(options.concurrency || 3, 5), // Cap at 5 concurrent requests
-      timeout: options.timeout || 15000,
+      maxPages: Math.min(options.maxPages || 10, 20), // Reduce to max 20 pages
+      maxDepth: Math.min(options.maxDepth || 2, 3),    // Reduce to max depth 3
+      concurrency: Math.min(options.concurrency || 1, 2), // Lower concurrency to avoid CPU spikes
+      timeout: options.timeout || 10000, // Lower timeout to 10 seconds
       respectRobots: options.respectRobots !== false,
       cacheResults: options.cacheResults !== false,
       skipCrawl: options.skipCrawl || false,
@@ -343,9 +343,16 @@ async function performSiteAudit(siteUrl, options = {}) {
     console.log(`Found ${pagesToAnalyze.length} pages to analyze`);
     
     // Process pages in batches to avoid overwhelming the server
-    const batchSize = 2; // Reduce batch size for better reliability
+    const batchSize = 1; // Lower to 1 for Railway deployment to reduce CPU usage
     const pageAnalysisResults = [];
     const processedUrls = new Set();
+    
+    // Add CPU usage safeguard
+    const maxAnalysisTime = 60000; // Maximum 60 seconds total analysis time
+    const analysisStartTime = Date.now();
+    const checkCpuUsage = () => {
+      return (Date.now() - analysisStartTime > maxAnalysisTime);
+    };
     
     // Track page analysis performance
     const pageAnalysisStats = {
@@ -360,6 +367,12 @@ async function performSiteAudit(siteUrl, options = {}) {
     console.log(`Starting analysis of ${pagesToAnalyze.length} pages in batches of ${batchSize}`);
     
     for (let i = 0; i < pagesToAnalyze.length; i += batchSize) {
+      // Stop processing if taking too long to avoid Railway CPU limit
+      if (checkCpuUsage()) {
+        console.log(`Stopping analysis early after ${Math.floor(i/batchSize)} batches to prevent CPU overload`);
+        break;
+      }
+      
       const batch = pagesToAnalyze.slice(i, i + batchSize);
       console.log(`Processing batch ${Math.floor(i/batchSize) + 1} of ${Math.ceil(pagesToAnalyze.length/batchSize)}: ${batch.join(', ')}`);
       
