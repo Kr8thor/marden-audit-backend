@@ -146,17 +146,26 @@ app.all('/health', (req, res) => {
 });
 
 app.all('/seo-analyze', (req, res) => {
-  req.url = '/api/seo-analyze';
+  // Create new URL using current url but with /api prefix
+  const originalUrl = new URL(req.url, `http://${req.headers.host || 'localhost'}`);
+  req.url = '/api/seo-analyze' + (originalUrl.search || '');
+  console.log(`Forwarding to: ${req.url}`);
   apiHandler(req, res);
 });
 
 app.all('/basic-audit', (req, res) => {
-  req.url = '/api/basic-audit';
+  // Create new URL using current url but with /api prefix
+  const originalUrl = new URL(req.url, `http://${req.headers.host || 'localhost'}`);
+  req.url = '/api/basic-audit' + (originalUrl.search || '');
+  console.log(`Forwarding to: ${req.url}`);
   apiHandler(req, res);
 });
 
 app.all('/batch-audit', (req, res) => {
-  req.url = '/api/batch-audit';
+  // Create new URL using current url but with /api prefix
+  const originalUrl = new URL(req.url, `http://${req.headers.host || 'localhost'}`);
+  req.url = '/api/batch-audit' + (originalUrl.search || '');
+  console.log(`Forwarding to: ${req.url}`);
   apiHandler(req, res);
 });
 
