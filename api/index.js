@@ -538,11 +538,11 @@ async function handleSiteAudit(req, res) {
       try {
         console.log(`Performing site audit for ${normalizedUrl}`);
         
-        // Use the site audit module to perform the audit
-        siteAuditResults = await siteAudit.performSiteAudit(normalizedUrl, {
-          ...options,
-          cacheResults: true
-        });
+        // Import the streamlined site-audit module
+        const siteAudit = require('./site-audit');
+        
+        // Use the streamlined module directly
+        siteAuditResults = await siteAudit.crawlAndAnalyzeSite(normalizedUrl, options);
         
         // Cache successful results if no error
         if (!siteAuditResults.error) {
@@ -890,7 +890,8 @@ module.exports = async (req, res) => {
         endpoints: {
           health: '/api/health',
           basic: '/api/basic-audit?url=example.com',
-          seo: '/api/seo-analyze?url=example.com'
+          seo: '/api/seo-analyze?url=example.com',
+          siteAudit: '/api/site-audit'
         },
         timestamp: new Date().toISOString()
       });
