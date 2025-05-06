@@ -1,4 +1,4 @@
-// Improved Batch URL SEO Audit implementation
+// Batch URL SEO Audit implementation
 const axios = require('axios');
 const cheerio = require('cheerio');
 const url = require('url');
@@ -77,22 +77,13 @@ function generateUrlCacheKey(url) {
 }
 
 /**
- * Analyze SEO for a specific URL with improved error handling
+ * Analyze SEO for a specific URL
  * @param {string} urlString URL to analyze 
  * @returns {Promise<Object>} Analysis results
  */
 async function analyzeSingleUrl(urlString) {
   const normalizedUrl = normalizeUrl(urlString);
-  console.log(`[${new Date().toISOString()}] Analyzing SEO for ${normalizedUrl}`);
-  
-  // Create minimal default result structure for error cases
-  const minimalResult = {
-    url: normalizedUrl,
-    timestamp: new Date().toISOString(),
-    analyzedAt: new Date().toISOString(),
-    score: 0,
-    status: 'error'
-  };
+  console.log(`Analyzing SEO for ${normalizedUrl}`);
   
   // Try to get cached result first
   if (redis.isRedisConfigured) {
@@ -122,23 +113,18 @@ async function analyzeSingleUrl(urlString) {
     // Start performance measurement
     const startTime = Date.now();
     
-    // Fetch the page with appropriate error handling and increased timeout
+    // Fetch the page with appropriate error handling
     let response;
     try {
-      console.log(`Fetching ${normalizedUrl}...`);
-      
       response = await axios.get(normalizedUrl, {
-        timeout: 30000, // Increased from 15000 to 30000 ms (30 seconds)
+        timeout: 15000,
         headers: {
           'User-Agent': 'MardenSEOAuditBot/1.0',
           'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,image/webp,*/*;q=0.8',
           'Accept-Language': 'en-US,en;q=0.5',
           'Cache-Control': 'no-cache'
-        },
-        maxContentLength: 10 * 1024 * 1024 // 10MB max content size
+        }
       });
-      
-      console.log(`Successfully fetched ${normalizedUrl} (${response.status})`);
     } catch (error) {
       // Handle common fetch errors with detailed reporting
       let errorMessage = 'Failed to fetch the page';
@@ -175,33 +161,22 @@ async function analyzeSingleUrl(urlString) {
         }
       }
       
-      console.error(`Error fetching ${normalizedUrl}: ${errorMessage}`);
-      
       return {
-        ...minimalResult,
+        url: normalizedUrl,
+        timestamp: new Date().toISOString(),
         error: {
           type: errorType,
           message: errorMessage,
           originalError: error.message
-        }
+        },
+        status: 'error',
+        score: 0,
+        analyzedAt: new Date().toISOString()
       };
     }
     
-    // Load content into cheerio with a safety check
-    let $;
-    try {
-      $ = cheerio.load(response.data);
-    } catch (error) {
-      console.error(`Error parsing HTML for ${normalizedUrl}: ${error.message}`);
-      return {
-        ...minimalResult,
-        error: {
-          type: 'parsing_error',
-          message: 'Failed to parse the page HTML',
-          originalError: error.message
-        }
-      };
-    }
+    // Load content into cheerio
+    const $ = cheerio.load(response.data);
     
     // Extract key SEO elements
     const title = $('title').text().trim();
@@ -702,31 +677,32 @@ async function analyzeSingleUrl(urlString) {
       }
     }
     
-    console.log(`Completed analysis for ${normalizedUrl}`);
     return result;
   } catch (error) {
-    console.error(`Unexpected error analyzing SEO for ${normalizedUrl}:`, error);
+    console.error(`Error analyzing SEO for ${normalizedUrl}:`, error);
     
     // Return structured error response
     return {
-      ...minimalResult,
+      url: normalizedUrl,
+      score: 0,
+      status: 'error',
       error: {
         type: 'analysis_error',
         message: 'Failed to analyze SEO for the provided URL',
         details: error.toString()
-      }
+      },
+      timestamp: new Date().toISOString(),
+      analyzedAt: new Date().toISOString()
     };
   }
 }
 
 /**
- * Handle batch SEO analysis with improved error handling and timeouts
+ * Handle batch SEO analysis
  * @param {Object} req Express request
  * @param {Object} res Express response
  */
 async function handleBatchAudit(req, res) {
-  console.log(`[${new Date().toISOString()}] Batch audit request received`);
-  
   try {
     // Extract URLs from request body
     const { urls } = req.body;
@@ -743,14 +719,6 @@ async function handleBatchAudit(req, res) {
     const MAX_URLS = 20;
     const urlsToProcess = urls.slice(0, MAX_URLS);
     
-    console.log(`Processing batch of ${urlsToProcess.length} URLs`);
-    
-    // Send initial response header to prevent timeout
-    res.writeHead(200, {
-      'Content-Type': 'application/json',
-      'Transfer-Encoding': 'chunked'
-    });
-    
     // Normalize URLs
     const normalizedUrls = urlsToProcess.map(url => normalizeUrl(url));
     
@@ -765,7 +733,7 @@ async function handleBatchAudit(req, res) {
         
         if (cachedBatchResult) {
           console.log(`Batch cache hit for ${normalizedUrls.length} URLs`);
-          const response = {
+          return res.status(200).json({
             status: 'success',
             message: 'Batch SEO analysis retrieved from cache',
             totalUrls: normalizedUrls.length,
@@ -773,10 +741,7 @@ async function handleBatchAudit(req, res) {
             cached: true,
             cachedAt: cachedBatchResult.timestamp || new Date().toISOString(),
             results: cachedBatchResult.results
-          };
-          
-          res.end(JSON.stringify(response));
-          return;
+          });
         }
         
         console.log(`Batch cache miss, performing analysis`);
@@ -819,65 +784,36 @@ async function handleBatchAudit(req, res) {
     console.log(`Processing ${uncachedUrls.length} uncached URLs out of ${normalizedUrls.length} total URLs`);
     
     // Process uncached URLs in parallel with rate limiting
-    // Reduce concurrency limit from 5 to 3 to avoid overwhelming servers
-    const concurrencyLimit = 3;
+    // Limit to 5 concurrent requests to avoid overwhelming the servers
+    const concurrencyLimit = 5;
     
     // Split into chunks and process sequentially to avoid overwhelming servers
     for (let i = 0; i < uncachedUrls.length; i += concurrencyLimit) {
       const chunk = uncachedUrls.slice(i, i + concurrencyLimit);
-      console.log(`Processing chunk ${Math.floor(i/concurrencyLimit) + 1} of ${Math.ceil(uncachedUrls.length/concurrencyLimit)}: ${chunk.join(', ')}`);
       
-      // Process this chunk in parallel with robust error handling
-      const chunkPromises = chunk.map(url => {
-        return new Promise(async (resolve) => {
-          try {
-            const result = await analyzeSingleUrl(url);
-            resolve(result);
-          } catch (error) {
-            console.error(`Error analyzing ${url}:`, error);
-            // Return an error result instead of throwing
-            resolve({
-              url,
-              score: 0,
-              status: 'error',
-              error: {
-                type: 'analysis_error',
-                message: error.message || 'Failed to analyze URL',
-                details: error.toString()
-              },
-              timestamp: new Date().toISOString(),
-              analyzedAt: new Date().toISOString()
-            });
-          }
-        });
-      });
+      // Process this chunk in parallel
+      const chunkPromises = chunk.map(url => analyzeSingleUrl(url));
+      const chunkResults = await Promise.allSettled(chunkPromises);
       
-      try {
-        // Use Promise.all instead of Promise.allSettled for better error handling
-        const chunkResults = await Promise.all(chunkPromises);
-        
-        // Add results to batch results
-        batchResults.push(...chunkResults);
-        
-        console.log(`Completed chunk ${Math.floor(i/concurrencyLimit) + 1}, processed ${batchResults.length} URLs so far`);
-      } catch (error) {
-        console.error(`Error processing chunk:`, error);
-        // Add error results for this chunk
-        for (const url of chunk) {
-          if (!batchResults.some(result => result.url === url)) {
-            batchResults.push({
-              url,
-              score: 0,
-              status: 'error',
-              error: {
-                type: 'chunk_processing_error',
-                message: 'Failed to process URL in batch',
-                details: error.toString()
-              },
-              timestamp: new Date().toISOString(),
-              analyzedAt: new Date().toISOString()
-            });
-          }
+      // Add results to batch results
+      for (let j = 0; j < chunkResults.length; j++) {
+        const result = chunkResults[j];
+        if (result.status === 'fulfilled') {
+          batchResults.push(result.value);
+        } else {
+          // Handle rejected promises
+          batchResults.push({
+            url: chunk[j],
+            score: 0,
+            status: 'error',
+            error: {
+              type: 'analysis_error',
+              message: 'Analysis failed',
+              details: result.reason?.toString() || 'Unknown error'
+            },
+            timestamp: new Date().toISOString(),
+            analyzedAt: new Date().toISOString()
+          });
         }
       }
     }
@@ -898,37 +834,23 @@ async function handleBatchAudit(req, res) {
     }
     
     // Return the combined results
-    const response = {
+    return res.status(200).json({
       status: 'success',
       message: 'Batch SEO analysis completed',
       totalUrls: normalizedUrls.length,
       timestamp: new Date().toISOString(),
       cached: false,
       results: batchResults
-    };
-    
-    console.log(`Batch analysis complete for ${normalizedUrls.length} URLs`);
-    res.end(JSON.stringify(response));
+    });
   } catch (error) {
     console.error('Error handling batch audit:', error);
     
-    // If headers have not been sent yet, send an error response
-    if (!res.headersSent) {
-      return res.status(500).json({
-        status: 'error',
-        message: 'Failed to perform batch SEO analysis',
-        error: error.message || 'Unknown error',
-        timestamp: new Date().toISOString()
-      });
-    } else {
-      // Otherwise, end the response with an error object
-      res.end(JSON.stringify({
-        status: 'error',
-        message: 'Failed to perform batch SEO analysis',
-        error: error.message || 'Unknown error',
-        timestamp: new Date().toISOString()
-      }));
-    }
+    return res.status(500).json({
+      status: 'error',
+      message: 'Failed to perform batch SEO analysis',
+      error: error.message || 'Unknown error',
+      timestamp: new Date().toISOString()
+    });
   }
 }
 

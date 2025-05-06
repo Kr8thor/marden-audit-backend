@@ -1,0 +1,91 @@
+// Unified API endpoint for SEO audit to stay under Vercel's Hobby plan limits
+// This consolidates multiple endpoints into a single serverless function
+const axios = require('axios');
+const cheerio = require('cheerio');
+const url = require('url');
+
+// Import Redis client for caching if configured
+let redis;
+try {
+  redis = require('./lib/redis');
+  console.log('Redis client imported successfully');
+} catch (error) {
+  console.warn('Redis client not available:', error.message);
+  // Provide fallback empty implementation
+  redis = {
+    getCache: async () => null,
+    setCache: async () => false,
+    deleteCache: async () => false,
+    checkHealth: async () => false,
+    generateCacheKey: () => '',
+    isRedisConfigured: false
+  };
+}
+
+// Add CORS headers
+function addCorsHeaders(res) {
+  // Set CORS headers to allow all origins for now (can be restricted later)
+  res.setHeader('Access-Control-Allow-Credentials', true);
+  res.setHeader('Access-Control-Allow-Origin', '*');
+  res.setHeader('Access-Control-Allow-Methods', 'GET,OPTIONS,PATCH,DELETE,POST,PUT');
+  res.setHeader('Access-Control-Allow-Headers', 'X-CSRF-Token, X-Requested-With, Accept, Accept-Version, Content-Length, Content-MD5, Content-Type, Date, X-Api-Version, Origin, Cache-Control');
+  
+  // Add extra security headers
+  res.setHeader('X-Content-Type-Options', 'nosniff');
+  res.setHeader('X-XSS-Protection', '1; mode=block');
+  
+  // Log CORS setup for debugging
+  console.log('CORS headers added to response');
+}
+
+/**
+ * Normalize URL to ensure proper format
+ * @param {string} url URL to normalize
+ * @returns {string} Normalized URL with proper protocol
+ */
+function normalizeUrl(url) {
+  if (!url) return '';
+  
+  // Trim whitespace
+  let normalizedUrl = url.trim();
+  
+  // Remove trailing slashes for consistency
+  while (normalizedUrl.endsWith('/')) {
+    normalizedUrl = normalizedUrl.slice(0, -1);
+  }
+  
+  // Ensure proper protocol
+  if (!normalizedUrl.startsWith('http://') && !normalizedUrl.startsWith('https://')) {
+    normalizedUrl = `https://${normalizedUrl}`;
+  }
+  
+  return normalizedUrl;
+}
+
+/**
+ * Handler for health check endpoint
+ */
+async function handleHealthCheck(req, res) {
+  try {
+    // Check Redis health if configured
+    let redisStatus = {
+      status: 'disabled',
+      message: 'Redis not configured'
+    };
+    
+    if (redis.isRedisConfigured) {
+      try {
+        const redisHealth = await redis.checkHealth();
+        redisStatus = {
+          status: redisHealth ? 'ok' : 'error',
+          message: redisHealth ? 'Connected' : 'Connection failed'
+        };
+      } catch (error) {
+        redisStatus = {
+          status: 'error',
+          message: `Connection failed: ${error.message}`
+        };
+      }
+    }
+    
+    return

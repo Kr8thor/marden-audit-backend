@@ -21,26 +21,6 @@ try {
   };
 }
 
-// Import site audit functionality
-let siteAudit;
-try {
-  siteAudit = require('../src/crawler/site-audit');
-  console.log('Site audit module imported successfully');
-} catch (error) {
-  console.warn('Site audit module not available:', error.message);
-  // Provide fallback empty implementation
-  siteAudit = {
-    performSiteAudit: async (url) => ({
-      url,
-      error: {
-        message: 'Site audit module not available'
-      },
-      status: 'error',
-      timestamp: new Date().toISOString()
-    })
-  };
-}
-
 // Global request concurrency control
 const CONCURRENCY_LIMIT = 2; // Only process two requests at a time
 let activeRequests = 0;
@@ -52,14 +32,11 @@ const memoryCache = new Map();
 // Add CORS headers
 function addCorsHeaders(res) {
   res.setHeader('Access-Control-Allow-Credentials', true);
-  res.setHeader('Access-Control-Allow-Origin', '*');  // Allow all origins
+  res.setHeader('Access-Control-Allow-Origin', '*');
   res.setHeader('Access-Control-Allow-Methods', 'GET,OPTIONS,PATCH,DELETE,POST,PUT');
   res.setHeader('Access-Control-Allow-Headers', 'X-CSRF-Token, X-Requested-With, Accept, Accept-Version, Content-Length, Content-MD5, Content-Type, Date, X-Api-Version, Origin, Cache-Control');
   res.setHeader('X-Content-Type-Options', 'nosniff');
   res.setHeader('X-XSS-Protection', '1; mode=block');
-  
-  // Log CORS headers for debugging
-  console.log('CORS headers added - allowing all origins including localhost:8081');
 }
 
 // Request throttling middleware
@@ -403,220 +380,6 @@ async function analyzeSeoLightweight(urlString) {
 }
 
 /**
- * Handle site-wide audit endpoint
- */
-async function handleSiteAudit(req, res) {
-  try {
-    // Extract request body (support both POST and GET methods)
-    let requestUrl;
-    let options = {};
-    
-    if (req.method === 'POST') {
-      let requestBody = req.body;
-      
-      // Parse body if it's a string
-      if (typeof requestBody === 'string') {
-        try {
-          requestBody = JSON.parse(requestBody);
-        } catch (e) {
-          releaseRequest();
-          return res.status(400).json({
-            status: 'error',
-            message: 'Invalid JSON in request body',
-            timestamp: new Date().toISOString()
-          });
-        }
-      }
-      
-      requestUrl = requestBody.url;
-      
-      // Extract options if provided
-      if (requestBody.options) {
-        options = requestBody.options;
-      } else {
-        // Extract common options directly from request body
-        if (requestBody.maxPages) options.maxPages = requestBody.maxPages;
-        if (requestBody.maxDepth) options.maxDepth = requestBody.maxDepth;
-        if (requestBody.respectRobots !== undefined) options.respectRobots = requestBody.respectRobots;
-        if (requestBody.customPages) options.customPages = requestBody.customPages;
-      }
-    } else if (req.method === 'GET') {
-      requestUrl = req.query.url;
-      
-      // Extract options from query parameters
-      if (req.query.maxPages) options.maxPages = parseInt(req.query.maxPages, 10);
-      if (req.query.maxDepth) options.maxDepth = parseInt(req.query.maxDepth, 10);
-      if (req.query.respectRobots !== undefined) options.respectRobots = req.query.respectRobots === 'true';
-    }
-    
-    if (!requestUrl) {
-      releaseRequest();
-      return res.status(400).json({
-        status: 'error',
-        message: 'URL is required',
-        timestamp: new Date().toISOString()
-      });
-    }
-    
-    // Normalize and validate URL format
-    const normalizedUrl = normalizeUrl(requestUrl);
-    try {
-      new URL(normalizedUrl);
-    } catch (error) {
-      releaseRequest();
-      return res.status(400).json({
-        status: 'error',
-        message: 'Invalid URL provided',
-        timestamp: new Date().toISOString()
-      });
-    }
-    
-    // Apply defaults and limits to options
-    options.maxPages = Math.min(options.maxPages || 10, 20); // Limit to 20 pages max
-    options.maxDepth = Math.min(options.maxDepth || 2, 3);   // Limit to depth 3 max
-    options.cacheResults = true; // Always use cache when available
-    options.concurrency = 1;     // Limit to 1 concurrent request for Railway
-    options.timeout = 10000;     // 10 second timeout per request
-    
-    console.log(`Performing site audit for ${normalizedUrl} with options:`, options);
-    
-    // Check memory cache first (ultra-fast, no Redis)
-    const memoryCacheKey = `mem:site-audit:${normalizedUrl.toLowerCase()}`;
-    const memoryCached = memoryCache.get(memoryCacheKey);
-    
-    if (memoryCached && Date.now() - memoryCached.timestamp < 3600000) { // 1 hour memory cache
-      console.log(`Memory cache hit for site audit: ${normalizedUrl}`);
-      releaseRequest();
-      return res.status(200).json({
-        status: 'ok',
-        message: 'Site audit retrieved from memory cache',
-        url: normalizedUrl,
-        cached: true,
-        cachedAt: new Date(memoryCached.timestamp).toISOString(),
-        data: memoryCached.data,
-        timestamp: new Date().toISOString()
-      });
-    }
-    
-    // Check Redis cache with timeout
-    let siteAuditResults;
-    let cached = false;
-    let cachedAt = null;
-    
-    if (redis.isRedisConfigured) {
-      try {
-        const cacheKey = `site-audit:${normalizedUrl.toLowerCase()}`;
-        console.log(`Checking Redis cache for site audit: ${cacheKey}`);
-        
-        // Try to get cached results with timeout
-        const cachedResults = await Promise.race([
-          redis.getCache(cacheKey),
-          timeout(1000).then(() => null) // 1 second timeout for Redis
-        ]);
-        
-        if (cachedResults) {
-          console.log(`Redis cache hit for site audit: ${normalizedUrl}`);
-          siteAuditResults = cachedResults.data;
-          cached = true;
-          cachedAt = cachedResults.timestamp;
-          
-          // Update memory cache
-          memoryCache.set(memoryCacheKey, {
-            data: siteAuditResults,
-            timestamp: Date.now()
-          });
-        } else {
-          console.log(`Redis cache miss for site audit: ${normalizedUrl}`);
-        }
-      } catch (error) {
-        console.error('Error checking Redis cache for site audit:', error);
-      }
-    }
-    
-    // If no cached results, perform site audit
-    if (!siteAuditResults) {
-      try {
-        console.log(`Performing site audit for ${normalizedUrl}`);
-        
-        // Use the site audit module to perform the audit
-        siteAuditResults = await siteAudit.performSiteAudit(normalizedUrl, {
-          ...options,
-          cacheResults: true
-        });
-        
-        // Cache successful results if no error
-        if (!siteAuditResults.error) {
-          // Always update memory cache
-          memoryCache.set(memoryCacheKey, {
-            data: siteAuditResults,
-            timestamp: Date.now()
-          });
-          
-          // Try to update Redis cache without waiting
-          if (redis.isRedisConfigured) {
-            try {
-              const cacheKey = `site-audit:${normalizedUrl.toLowerCase()}`;
-              // Don't await - run in background
-              redis.setCache(cacheKey, {
-                data: siteAuditResults,
-                timestamp: new Date().toISOString()
-              }, 86400).catch(err => console.error('Background Redis caching error:', err));
-            } catch (error) {
-              console.error('Error caching site audit results:', error);
-            }
-          }
-        }
-      } catch (error) {
-        console.error(`Error performing site audit for ${normalizedUrl}:`, error);
-        releaseRequest();
-        return res.status(500).json({
-          status: 'error',
-          message: `Failed to perform site audit: ${error.message}`,
-          url: normalizedUrl,
-          timestamp: new Date().toISOString()
-        });
-      }
-    }
-    
-    // Check if site audit resulted in an error
-    if (siteAuditResults.error) {
-      releaseRequest();
-      return res.status(200).json({
-        status: 'error',
-        message: siteAuditResults.error.message || 'Site audit encountered an error',
-        url: normalizedUrl,
-        cached: false,
-        timestamp: new Date().toISOString(),
-        data: {
-          error: siteAuditResults.error
-        }
-      });
-    }
-    
-    // Return successful site audit results
-    releaseRequest();
-    return res.status(200).json({
-      status: 'ok',
-      message: cached ? 'Site audit retrieved from cache' : 'Site audit completed',
-      url: normalizedUrl,
-      cached,
-      cachedAt,
-      timestamp: new Date().toISOString(),
-      data: siteAuditResults
-    });
-  } catch (error) {
-    console.error('Error in site audit handler:', error);
-    releaseRequest();
-    return res.status(500).json({
-      status: 'error',
-      message: 'Failed to perform site audit',
-      error: error.message || 'Unknown error',
-      timestamp: new Date().toISOString()
-    });
-  }
-}
-
-/**
  * Handle SEO analysis endpoint with CPU optimization
  */
 async function handleSeoAnalyze(req, res) {
@@ -860,13 +623,6 @@ module.exports = async (req, res) => {
         path === '/api/seo-analyze' || path === '/analyze') {
       return await limitConcurrency(req, res, async () => {
         await handleSeoAnalyze(req, res);
-      });
-    }
-    
-    // Site audit endpoint
-    if (path === '/site-audit' || path === '/v2/site-audit' || path === '/api/site-audit') {
-      return await limitConcurrency(req, res, async () => {
-        await handleSiteAudit(req, res);
       });
     }
     

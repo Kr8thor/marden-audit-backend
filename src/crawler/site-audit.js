@@ -239,67 +239,265 @@ function generateSiteAuditCacheKey(url, options = {}) {
  * @returns {Promise<Object>} Site audit results
  */
 async function performSiteAudit(siteUrl, options = {}) {
-  // RAILWAY EMERGENCY FIX: Return a simplified response without crawling
-  // This is a temporary fix to prevent high CPU usage on Railway
-  console.log(`RAILWAY EMERGENCY MODE: Simplified site audit for ${siteUrl}`);
+  console.log(`Starting site audit for ${siteUrl} with options:`, options);
+  const startTime = Date.now();
   
-  const normalizedUrl = normalizeUrl(siteUrl);
-  
-  // Only analyze homepage
   try {
-    // Analyze just the homepage
-    console.log(`Analyzing homepage only: ${normalizedUrl}`);
+    // Normalize URL
+    const normalizedUrl = normalizeUrl(siteUrl);
     
-    // Make sure analyzeSeoFunction is defined and callable
-    if (typeof analyzeSeoFunction !== 'function') {
-      throw new Error('SEO analysis function is not properly defined');
+    // Set up audit options with defaults and Railway-friendly settings
+    const auditOptions = {
+      maxPages: Math.min(options.maxPages || 5, 10),    // Limit to 10 pages max
+      maxDepth: Math.min(options.maxDepth || 2, 3),     // Limit to depth 3 max
+      concurrency: 1,                                    // Set to 1 for Railway
+      timeout: 10000,                                    // 10 second timeout
+      respectRobots: options.respectRobots !== false,    // Default to respecting robots.txt
+      skipCrawl: options.skipCrawl || false,             // Don't skip crawl by default
+      customPages: options.customPages || [],            // No custom pages by default
+      cacheResults: options.cacheResults !== false       // Cache results by default
+    };
+    
+    // Check if low memory mode is needed (use for Railway)
+    const isLowMemoryMode = true; // Always use low memory mode for Railway
+    
+    // If in low memory mode, limit pages further
+    if (isLowMemoryMode) {
+      auditOptions.maxPages = Math.min(auditOptions.maxPages, 5);
+      auditOptions.maxDepth = Math.min(auditOptions.maxDepth, 2);
+      auditOptions.concurrency = 1;
+      
+      console.log(`Using low memory mode with reduced limits: maxPages=${auditOptions.maxPages}, maxDepth=${auditOptions.maxDepth}`);
     }
     
-    // Analyze the homepage with timeout
-    const analysisPromise = analyzeSeoFunction(normalizedUrl);
-    const timeoutPromise = new Promise((_, reject) => 
-      setTimeout(() => reject(new Error('Analysis timeout')), 15000)
-    );
-    
-    // Race the analysis against a timeout
-    const analysis = await Promise.race([analysisPromise, timeoutPromise]);
-    
-    // Create a simplified site audit result
-    return {
-      url: normalizedUrl,
-      crawlStats: {
+    // If custom pages provided and skipCrawl is true, analyze only those pages
+    if (auditOptions.skipCrawl && auditOptions.customPages.length > 0) {
+      console.log(`Skipping crawl and using ${auditOptions.customPages.length} custom pages`);
+      
+      // Normalize custom page URLs
+      const normalizedCustomPages = auditOptions.customPages.map(url => normalizeUrl(url));
+      
+      // Create minimal crawl results
+      const crawlResults = {
         startUrl: normalizedUrl,
         baseDomain: new URL(normalizedUrl).hostname,
-        pagesDiscovered: 1,
-        pagesCrawled: 1,
+        crawlDuration: 0,
+        pagesDiscovered: normalizedCustomPages.length,
+        pagesCrawled: normalizedCustomPages.length,
         pagesFailed: 0,
         pagesSkipped: 0,
-        homepageOnly: true,
-        railwayEmergencyMode: true,
+        customPages: true,
         timestamp: new Date().toISOString()
-      },
-      pages: [analysis],
+      };
+      
+      // Analyze each custom page
+      console.log(`Analyzing ${normalizedCustomPages.length} custom pages`);
+      const pageAnalysisResults = [];
+      
+      for (const pageUrl of normalizedCustomPages) {
+        try {
+          // Analyze the page with timeout
+          const analysisPromise = analyzeSeoFunction(pageUrl);
+          const timeoutPromise = new Promise((_, reject) => 
+            setTimeout(() => reject(new Error('Analysis timeout')), 15000)
+          );
+          
+          // Race the analysis against a timeout
+          const analysis = await Promise.race([analysisPromise, timeoutPromise]);
+          
+          // Add to page results
+          pageAnalysisResults.push(analysis);
+        } catch (error) {
+          console.error(`Error analyzing custom page ${pageUrl}:`, error);
+          
+          // Add error result
+          pageAnalysisResults.push({
+            url: pageUrl,
+            score: 0,
+            status: 'error',
+            error: {
+              message: `Analysis failed: ${error.message}`
+            },
+            timestamp: new Date().toISOString()
+          });
+        }
+      }
+      
+      // Calculate overall score (average of successful page scores)
+      const successfulPages = pageAnalysisResults.filter(p => p.status !== 'error');
+      const overallScore = successfulPages.length > 0
+        ? Math.round(successfulPages.reduce((sum, page) => sum + page.score, 0) / successfulPages.length)
+        : 0;
+      
+      // Return site audit results
+      return {
+        url: normalizedUrl,
+        crawlStats: crawlResults,
+        pages: pageAnalysisResults,
+        analysisStats: {
+          pagesAnalyzed: pageAnalysisResults.length,
+          pagesSucceeded: successfulPages.length,
+          pagesFailed: pageAnalysisResults.length - successfulPages.length
+        },
+        overallScore,
+        overallStatus: overallScore >= 80 ? 'good' : overallScore >= 50 ? 'needs_improvement' : 'poor',
+        auditDuration: Date.now() - startTime,
+        timestamp: new Date().toISOString()
+      };
+    }
+    
+    // In all other cases, crawl the site and analyze found pages
+    const maxPagesToAnalyze = auditOptions.maxPages;
+    
+    // Create and initialize the crawler
+    console.log(`Initializing crawler for ${normalizedUrl} with maxPages=${auditOptions.maxPages}, maxDepth=${auditOptions.maxDepth}`);
+    const crawler = new SiteCrawler({
+      maxPages: auditOptions.maxPages,
+      maxDepth: auditOptions.maxDepth,
+      concurrency: auditOptions.concurrency,
+      timeout: auditOptions.timeout,
+      respectRobots: auditOptions.respectRobots
+    });
+    
+    await crawler.initialize(normalizedUrl);
+    
+    // Run the crawl
+    console.log(`Starting crawl...`);
+    const crawlResults = await crawler.crawl();
+    
+    // Extract page URLs to analyze
+    console.log(`Crawl completed. Found ${crawlResults.crawledPages?.length || 0} pages`);
+    
+    // Ensure we have crawled pages
+    if (!crawlResults.crawledPages || crawlResults.crawledPages.length === 0) {
+      throw new Error('No pages were successfully crawled');
+    }
+    
+    // Sort pages by depth (analyze shallower pages first)
+    const sortedPages = [...crawlResults.crawledPages].sort((a, b) => a.depth - b.depth);
+    
+    // Limit the number of pages to analyze
+    const pagesToAnalyze = sortedPages.slice(0, maxPagesToAnalyze).map(page => page.url);
+    
+    // Ensure the start URL is included if not already
+    if (!pagesToAnalyze.includes(normalizedUrl)) {
+      pagesToAnalyze.unshift(normalizedUrl);
+    }
+    
+    console.log(`Analyzing ${pagesToAnalyze.length} pages`);
+    
+    // Analyze each page sequentially to avoid memory issues
+    const pageAnalysisResults = [];
+    
+    for (const pageUrl of pagesToAnalyze) {
+      try {
+        console.log(`Analyzing page: ${pageUrl}`);
+        
+        // Analyze the page with timeout
+        const analysisPromise = analyzeSeoFunction(pageUrl);
+        const timeoutPromise = new Promise((_, reject) => 
+          setTimeout(() => reject(new Error('Analysis timeout')), 15000)
+        );
+        
+        // Race the analysis against a timeout
+        const analysis = await Promise.race([analysisPromise, timeoutPromise]);
+        
+        // Add to page results
+        pageAnalysisResults.push(analysis);
+      } catch (error) {
+        console.error(`Error analyzing page ${pageUrl}:`, error);
+        
+        // Add error result
+        pageAnalysisResults.push({
+          url: pageUrl,
+          score: 0,
+          status: 'error',
+          error: {
+            message: `Analysis failed: ${error.message}`
+          },
+          timestamp: new Date().toISOString()
+        });
+      }
+    }
+    
+    // Calculate overall score (average of successful page scores)
+    const successfulPages = pageAnalysisResults.filter(p => p.status !== 'error');
+    const overallScore = successfulPages.length > 0
+      ? Math.round(successfulPages.reduce((sum, page) => sum + page.score, 0) / successfulPages.length)
+      : 0;
+    
+    // Return site audit results
+    return {
+      url: normalizedUrl,
+      crawlStats: crawlResults,
+      pages: pageAnalysisResults,
       analysisStats: {
-        pagesAnalyzed: 1,
-        pagesSucceeded: 1,
-        pagesFailed: 0
+        pagesAnalyzed: pageAnalysisResults.length,
+        pagesSucceeded: successfulPages.length,
+        pagesFailed: pageAnalysisResults.length - successfulPages.length
       },
-      overallScore: analysis.score,
-      overallStatus: analysis.status,
+      overallScore,
+      overallStatus: overallScore >= 80 ? 'good' : overallScore >= 50 ? 'needs_improvement' : 'poor',
+      auditDuration: Date.now() - startTime,
       timestamp: new Date().toISOString()
     };
   } catch (error) {
-    console.error('Emergency site audit failed:', error);
+    console.error('Site audit failed:', error);
     
-    return {
-      url: siteUrl,
-      error: {
-        message: `Emergency site audit failed: ${error.message}`,
-        railwayEmergencyMode: true
-      },
-      status: 'error',
-      timestamp: new Date().toISOString()
-    };
+    // Fall back to homepage-only analysis if crawling fails
+    try {
+      console.log(`Crawl failed, falling back to homepage-only analysis`);
+      const normalizedUrl = normalizeUrl(siteUrl);
+      
+      // Analyze just the homepage
+      console.log(`Analyzing homepage only: ${normalizedUrl}`);
+      
+      // Analyze the homepage with timeout
+      const analysisPromise = analyzeSeoFunction(normalizedUrl);
+      const timeoutPromise = new Promise((_, reject) => 
+        setTimeout(() => reject(new Error('Analysis timeout')), 15000)
+      );
+      
+      // Race the analysis against a timeout
+      const analysis = await Promise.race([analysisPromise, timeoutPromise]);
+      
+      // Create a simplified site audit result
+      return {
+        url: normalizedUrl,
+        crawlStats: {
+          startUrl: normalizedUrl,
+          baseDomain: new URL(normalizedUrl).hostname,
+          pagesDiscovered: 1,
+          pagesCrawled: 1,
+          pagesFailed: 0,
+          pagesSkipped: 0,
+          homepageOnly: true,
+          fallbackMode: true,
+          timestamp: new Date().toISOString()
+        },
+        pages: [analysis],
+        analysisStats: {
+          pagesAnalyzed: 1,
+          pagesSucceeded: 1,
+          pagesFailed: 0
+        },
+        overallScore: analysis.score,
+        overallStatus: analysis.status,
+        timestamp: new Date().toISOString()
+      };
+    } catch (fallbackError) {
+      console.error('Fallback analysis also failed:', fallbackError);
+      
+      return {
+        url: siteUrl,
+        error: {
+          message: `Site audit failed: ${error.message}`,
+          fallbackError: fallbackError.message
+        },
+        status: 'error',
+        timestamp: new Date().toISOString()
+      };
+    }
   }
 }
     
