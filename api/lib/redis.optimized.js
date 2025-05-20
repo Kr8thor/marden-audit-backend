@@ -13,7 +13,7 @@ const isRedisConfigured = REDIS_URL && REDIS_TOKEN;
 const DEFAULT_CACHE_TTL = 86400;
 
 // Request timeout for Redis operations (ms)
-const REDIS_TIMEOUT = 1000;
+const REDIS_TIMEOUT = 2000;
 
 // Track Redis request statistics for monitoring
 const stats = {
@@ -49,24 +49,14 @@ async function setCache(key, value, expirationSeconds = 3600) {
     const url = `${REDIS_URL}/set/${encodeURIComponent(key)}/${encodeURIComponent(valueToStore)}?EX=${expirationSeconds}`;
     
     // Execute the Redis command with timeout
-    const controller = new AbortController();
-    const timeoutId = setTimeout(() => controller.abort(), REDIS_TIMEOUT);
-    
-    const response = await fetch(url, {
+    const response = await axios.get(url, {
       headers: {
         Authorization: `Bearer ${REDIS_TOKEN}`
       },
-      signal: controller.signal
+      timeout: REDIS_TIMEOUT
     });
     
-    clearTimeout(timeoutId);
-    
-    if (!response.ok) {
-      throw new Error(`Redis responded with status ${response.status}`);
-    }
-    
-    const data = await response.json();
-    const success = data.result === 'OK';
+    const success = response.data.result === 'OK';
     
     if (success) {
       stats.setSuccesses++;
@@ -100,26 +90,15 @@ async function getCache(key) {
     const url = `${REDIS_URL}/get/${encodeURIComponent(key)}`;
     
     // Execute the Redis command with timeout
-    const controller = new AbortController();
-    const timeoutId = setTimeout(() => controller.abort(), REDIS_TIMEOUT);
-    
-    const response = await fetch(url, {
+    const response = await axios.get(url, {
       headers: {
         Authorization: `Bearer ${REDIS_TOKEN}`
       },
-      signal: controller.signal
+      timeout: REDIS_TIMEOUT
     });
     
-    clearTimeout(timeoutId);
-    
-    if (!response.ok) {
-      throw new Error(`Redis responded with status ${response.status}`);
-    }
-    
-    const data = await response.json();
-    
     // Check if result is null (key not found)
-    if (data.result === null) {
+    if (response.data.result === null) {
       return null;
     }
     
@@ -127,9 +106,9 @@ async function getCache(key) {
     
     // Try to parse the result as JSON, fallback to raw string
     try {
-      return JSON.parse(data.result);
+      return JSON.parse(response.data.result);
     } catch (e) {
-      return data.result;
+      return response.data.result;
     }
   } catch (error) {
     console.error('Redis GET error:', error.message);
@@ -156,24 +135,14 @@ async function deleteCache(key) {
     const url = `${REDIS_URL}/del/${encodeURIComponent(key)}`;
     
     // Execute the Redis command with timeout
-    const controller = new AbortController();
-    const timeoutId = setTimeout(() => controller.abort(), REDIS_TIMEOUT);
-    
-    const response = await fetch(url, {
+    const response = await axios.get(url, {
       headers: {
         Authorization: `Bearer ${REDIS_TOKEN}`
       },
-      signal: controller.signal
+      timeout: REDIS_TIMEOUT
     });
     
-    clearTimeout(timeoutId);
-    
-    if (!response.ok) {
-      throw new Error(`Redis responded with status ${response.status}`);
-    }
-    
-    const data = await response.json();
-    return data.result > 0;
+    return response.data.result > 0;
   } catch (error) {
     console.error('Redis DEL error:', error.message);
     stats.errors++;
@@ -198,24 +167,14 @@ async function checkHealth() {
     const url = `${REDIS_URL}/ping`;
     
     // Execute the Redis command with timeout
-    const controller = new AbortController();
-    const timeoutId = setTimeout(() => controller.abort(), REDIS_TIMEOUT);
-    
-    const response = await fetch(url, {
+    const response = await axios.get(url, {
       headers: {
         Authorization: `Bearer ${REDIS_TOKEN}`
       },
-      signal: controller.signal
+      timeout: REDIS_TIMEOUT
     });
     
-    clearTimeout(timeoutId);
-    
-    if (!response.ok) {
-      throw new Error(`Redis responded with status ${response.status}`);
-    }
-    
-    const data = await response.json();
-    return data.result === 'PONG';
+    return response.data.result === 'PONG';
   } catch (error) {
     console.error('Redis health check error:', error.message);
     stats.errors++;
