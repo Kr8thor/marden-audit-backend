@@ -1,10 +1,13 @@
 # Marden SEO Audit Tool - Backend
 
-This repository contains the backend API for the Marden SEO Audit Tool, optimized for deployment on Railway.
+This repository contains the backend API for the Marden SEO Audit Tool, optimized for deployment on Railway with enhanced SEO analysis capabilities.
 
 ## Features
 
 - Comprehensive SEO analysis
+- Structured data (schema.org) validation
+- Mobile-friendliness analysis
+- Full site crawling with Crawl4AI integration
 - Memory-optimized for Railway deployment
 - Two-tier caching (memory + Redis)
 - Concurrency control
@@ -47,8 +50,28 @@ This will start the server in development mode with nodemon for auto-reloading.
 Test the API with:
 
 ```bash
+# Basic health check
 curl http://localhost:3000/health
+
+# Basic SEO analysis
 curl http://localhost:3000/seo-analyze?url=https://example.com
+
+# Schema.org markup analysis
+curl http://localhost:3000/schema-analyze?url=https://example.com
+
+# Mobile-friendliness analysis
+curl http://localhost:3000/mobile-analyze?url=https://example.com
+
+# Enhanced analysis (POST request)
+curl -X POST -H "Content-Type: application/json" -d '{"url":"https://example.com","options":{"mobileAnalysis":true,"schemaAnalysis":true}}' http://localhost:3000/enhanced-seo-analyze
+```
+
+5. **Testing the enhanced features**
+
+You can run the enhanced features test:
+
+```bash
+node test-enhanced.js
 ```
 
 ## Deployment on Railway
@@ -104,7 +127,11 @@ railway up
 
 6. **Verify Deployment**
 
-Navigate to your Railway dashboard to confirm successful deployment.
+Navigate to your Railway dashboard to confirm successful deployment and check the health endpoint:
+
+```bash
+curl https://[your-railway-url]/health
+```
 
 ## API Endpoints
 
@@ -134,6 +161,32 @@ POST /basic-audit
 
 Alias for SEO analysis.
 
+### Schema Analysis (New)
+
+```
+GET /schema-analyze?url=https://example.com
+```
+
+Analyzes structured data (schema.org markup) on a webpage.
+
+### Mobile-Friendliness Analysis (New)
+
+```
+GET /mobile-analyze?url=https://example.com
+```
+
+Analyzes mobile-friendliness factors for a webpage.
+
+### Enhanced SEO Analysis (New)
+
+```
+POST /enhanced-seo-analyze
+```
+
+Performs comprehensive SEO analysis with multiple components (mobile-friendliness, schema validation, and optionally site crawling).
+
+For full API documentation, see [API_DOCUMENTATION.md](API_DOCUMENTATION.md).
+
 ## Configuration
 
 ### Memory Management
@@ -149,6 +202,30 @@ By default, the application allows 3 concurrent requests, with additional reques
 The application uses a two-tier caching strategy:
 - Memory cache: 1 hour TTL
 - Redis cache: 24 hours TTL
+
+## Enhanced Features
+
+### Schema Validator
+
+- Detects JSON-LD and Microdata formats
+- Validates schema according to schema.org requirements
+- Provides recommendations for improved implementation
+- Supports multiple schema types (Organization, Product, WebPage, etc.)
+
+### Mobile-Friendly Analyzer
+
+- Checks viewport configuration
+- Evaluates tap target sizes
+- Detects horizontal scrolling issues
+- Analyzes responsive design elements
+- Identifies mobile compatibility issues
+
+### Crawl4AI Integration
+
+- Multi-page site crawling
+- Configurable crawl depth and limits
+- Cross-page issue aggregation
+- Performance metrics collection
 
 ## Monitoring
 

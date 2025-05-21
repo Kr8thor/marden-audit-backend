@@ -7,8 +7,16 @@
   "deploy": {
     "startCommand": "node --max-old-space-size=256 app.js",
     "healthcheckPath": "/health",
-    "healthcheckTimeout": 120,
-    "restartPolicyType": "ON_FAILURE",
-    "restartPolicyMaxRetries": 5
+    "healthcheckTimeout": 60,
+    "restartPolicyType": "ALWAYS",
+    "restartPolicyMaxRetries": 10
+  },
+  "variables": {
+    "NODE_ENV": "production",
+    "MAX_CONCURRENCY": "3",
+    "MAX_MEMORY_PERCENT": "80",
+    "CORS_ORIGIN": "https://audit.mardenseo.com,http://localhost:9090",
+    "UPSTASH_REDIS_REST_URL": "https://smiling-shrimp-21387.upstash.io",
+    "UPSTASH_REDIS_REST_TOKEN": "AVOLAAIjcDFmNzVjNDVjZGM3MGY0NDczODEyMTA0NTAyOGNkMTc5OXAxMA"
   }
 }

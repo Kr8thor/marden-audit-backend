@@ -6,6 +6,7 @@ const normalizeUrl = require('normalize-url');
 const handleHealthCheck = require('./health');
 const handleSeoAnalyze = require('./site-audit');
 const handleSiteAudit = require('./enhanced-site-audit');
+const handleEnhancedSiteCrawl = require('./enhanced-site-crawl');
 
 // Setup concurrency control
 let activeRequests = 0;
@@ -116,6 +117,10 @@ module.exports = async (req, res) => {
         // Site audit endpoint
         else if (path === '/site-audit' || path === '/api/site-audit') {
           await handleSiteAudit(req, res);
+        }
+        // Site crawl endpoint
+        else if (path === '/site-crawl' || path === '/api/site-crawl') {
+          await handleEnhancedSiteCrawl(req, res);
         }
         // Enhanced SEO analyze endpoint (new)
         else if (path === '/enhanced-seo-analyze' || path === '/api/enhanced-seo-analyze') {
