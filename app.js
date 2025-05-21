@@ -43,7 +43,7 @@ try {
 // Set up allowed origins from environment variable
 const corsOrigins = process.env.CORS_ORIGIN ? 
   process.env.CORS_ORIGIN.split(',') : 
-  ['https://audit.mardenseo.com', 'http://localhost:9090'];
+  ['https://audit.mardenseo.com', 'https://glittering-granita-92b678.netlify.app', 'http://localhost:9090'];
 
 console.log('CORS origins:', corsOrigins);
 

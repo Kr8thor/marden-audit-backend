@@ -1,10 +1,10 @@
 {
   "name": "marden-audit-backend",
   "version": "1.0.0",
-  "main": "api/index.js",
+  "main": "app.js",
   "scripts": {
-    "start": "node api/index.js",
-    "dev": "nodemon api/index.js",
+    "start": "node --max-old-space-size=256 app.js",
+    "dev": "nodemon app.js",
     "test": "jest",
     "lint": "eslint .",
     "deploy": "vercel",
