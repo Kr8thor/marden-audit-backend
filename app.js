@@ -116,6 +116,11 @@ app.get('/status', (req, res) => {
 // Forward all API requests to the optimized handler
 app.all('/api/*', (req, res) => {
   try {
+    // Remove the /api prefix before passing to handler
+    const originalUrl = req.url;
+    req.url = originalUrl.replace(/^\/api/, '');
+    console.log(`Redirecting ${originalUrl} to ${req.url}`);
+    
     apiHandler(req, res);
   } catch (err) {
     console.error('Error handling API request:', err);
@@ -169,6 +174,28 @@ app.all('/batch-audit', (req, res) => {
   apiHandler(req, res);
 });
 
+// New enhanced endpoints
+app.all('/enhanced-seo-analyze', (req, res) => {
+  const originalUrl = new URL(req.url, `http://${req.headers.host || 'localhost'}`);
+  req.url = '/api/enhanced-seo-analyze' + (originalUrl.search || '');
+  console.log(`Forwarding to: ${req.url}`);
+  apiHandler(req, res);
+});
+
+app.all('/schema-analyze', (req, res) => {
+  const originalUrl = new URL(req.url, `http://${req.headers.host || 'localhost'}`);
+  req.url = '/api/schema-analyze' + (originalUrl.search || '');
+  console.log(`Forwarding to: ${req.url}`);
+  apiHandler(req, res);
+});
+
+app.all('/mobile-analyze', (req, res) => {
+  const originalUrl = new URL(req.url, `http://${req.headers.host || 'localhost'}`);
+  req.url = '/api/mobile-analyze' + (originalUrl.search || '');
+  console.log(`Forwarding to: ${req.url}`);
+  apiHandler(req, res);
+});
+
 // Add root handler
 app.get('/', (req, res) => {
   res.json({
@@ -178,7 +205,10 @@ app.get('/', (req, res) => {
       '/health',
       '/seo-analyze',
       '/basic-audit',
-      '/batch-audit'
+      '/batch-audit',
+      '/enhanced-seo-analyze',
+      '/schema-analyze',
+      '/mobile-analyze'
     ],
     documentation: 'https://github.com/Kr8thor/marden-audit-backend'
   });

@@ -1,32 +1,38 @@
 {
   "name": "marden-audit-backend",
-  "version": "1.0.0",
+  "version": "2.1.0",
+  "description": "Marden SEO Audit Backend - Railway Optimized",
   "main": "app.js",
   "scripts": {
     "start": "node --max-old-space-size=256 app.js",
     "dev": "nodemon app.js",
-    "test": "jest",
-    "lint": "eslint .",
-    "deploy": "vercel",
-    "deploy:prod": "vercel --prod"
+    "test": "node test-redis.js",
+    "test:enhanced": "node test-enhanced.js",
+    "monitor": "node monitor-enhanced.js",
+    "deploy": "railway up",
+    "railway:deploy": "railway up",
+    "api:docs": "echo 'API documentation available at API_DOCUMENTATION.md'"
   },
-  "keywords": [
-    "seo",
-    "audit",
-    "analysis"
-  ],
-  "author": "",
-  "license": "ISC",
-  "description": "Simple SEO audit API",
+  "engines": {
+    "node": ">=16.0.0"
+  },
   "dependencies": {
-    "axios": "^1.8.4",
-    "body-parser": "^1.20.2",
+    "@upstash/redis": "^1.25.1",
+    "axios": "^1.6.0",
     "cheerio": "^1.0.0-rc.12",
     "cors": "^2.8.5",
-    "express": "^4.18.2"
+    "dotenv": "^16.3.1",
+    "express": "^4.18.2",
+    "node-fetch": "^2.7.0",
+    "puppeteer-core": "^21.9.0",
+    "puppeteer": "^21.9.0",
+    "robots-parser": "^3.0.1",
+    "uuid": "^9.0.1"
   },
   "devDependencies": {
-    "jest": "^29.7.0",
-    "nodemon": "^3.1.9"
-  }
+    "nodemon": "^3.0.1"
+  },
+  "author": "Marden SEO",
+  "license": "UNLICENSED",
+  "private": true
 }
