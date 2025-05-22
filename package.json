@@ -4,8 +4,8 @@
   "description": "Marden SEO Audit Backend - Railway Optimized",
   "main": "app.js",
   "scripts": {
-    "start": "node emergency-cors-server.js",
-    "dev": "node emergency-cors-server.js",
+    "start": "node --max-old-space-size=256 app.js",
+    "dev": "node --max-old-space-size=256 app.js",
     "test": "node test-redis.js",
     "test:enhanced": "node test-enhanced.js",
     "monitor": "node monitor-enhanced.js",
