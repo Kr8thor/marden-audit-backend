@@ -67,25 +67,37 @@ function addCorsHeaders(res, req) {
     [
       'https://audit.mardenseo.com',
       'https://glittering-granita-92b678.netlify.app',
-      'http://localhost:9090'
+      'https://melodious-narwhal-fc00c0.netlify.app',
+      'http://localhost:9090',
+      'http://localhost:3000'
     ];
   
   // Get the request origin
   const requestOrigin = req.headers.origin;
   
+  console.log('🔍 CORS Debug - Request Origin:', requestOrigin);
+  console.log('🔍 CORS Debug - Allowed Origins:', corsOrigins);
+  
   // Check if the request origin is in our allowed list
-  const allowedOrigin = corsOrigins.find(origin => 
-    origin.trim() === requestOrigin || 
-    origin.trim() === '*'
+  let allowedOrigin = corsOrigins.find(origin => 
+    origin.trim() === requestOrigin
   );
+  
+  // If no specific match found, use wildcard for now to debug
+  if (!allowedOrigin && requestOrigin) {
+    console.log('⚠️ CORS Debug - Origin not in whitelist, allowing anyway for debugging');
+    allowedOrigin = requestOrigin;
+  }
   
   // Set the appropriate origin
   const originToSet = allowedOrigin || corsOrigins[0];
   
+  console.log('✅ CORS Debug - Setting Origin to:', originToSet);
+  
   res.setHeader('Access-Control-Allow-Origin', originToSet);
   res.setHeader('Access-Control-Allow-Methods', 'GET, POST, OPTIONS');
-  res.setHeader('Access-Control-Allow-Headers', 'Content-Type, Authorization');
-  res.setHeader('Access-Control-Allow-Credentials', 'true');
+  res.setHeader('Access-Control-Allow-Headers', 'Content-Type, Authorization, Accept, Origin');
+  res.setHeader('Access-Control-Allow-Credentials', 'false');
 }
 
 // Add routes for enhanced tools
