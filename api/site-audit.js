@@ -504,3 +504,75 @@ module.exports = {
   analyzePage,
   normalizeUrl
 };
+/**
+ * Handle SEO analysis API requests
+ * This is the main handler function that the API router calls
+ */
+async function handleSeoAnalyze(req, res) {
+  const startTime = Date.now();
+  
+  try {
+    // Extract URL from request
+    let url = '';
+    let options = {};
+    
+    if (req.method === 'POST') {
+      url = req.body.url;
+      options = req.body.options || {};
+    } else if (req.method === 'GET') {
+      url = req.query.url;
+      options = {
+        maxPages: req.query.maxPages ? parseInt(req.query.maxPages, 10) : 1,
+        maxDepth: req.query.maxDepth ? parseInt(req.query.maxDepth, 10) : 0
+      };
+    }
+    
+    if (!url) {
+      return res.status(400).json({
+        status: 'error',
+        message: 'URL parameter is required',
+        timestamp: new Date().toISOString()
+      });
+    }
+    
+    console.log(`Handling SEO analysis request for: ${url}`);
+    
+    // Normalize the URL
+    const normalizedUrl = normalizeUrl(url);
+    
+    // For basic SEO analysis, just analyze the single page
+    const pageResult = await analyzePage(normalizedUrl);
+    
+    // Calculate execution time
+    const executionTime = Date.now() - startTime;
+    
+    // Return the result in expected format
+    return res.status(200).json({
+      status: 'ok',
+      message: 'SEO analysis completed',
+      url: normalizedUrl,
+      cached: false,
+      timestamp: new Date().toISOString(),
+      executionTime,
+      data: pageResult
+    });
+    
+  } catch (error) {
+    console.error('SEO analysis error:', error);
+    
+    return res.status(500).json({
+      status: 'error',
+      message: 'SEO analysis failed',
+      error: process.env.NODE_ENV === 'production' ? 'Internal server error' : error.message,
+      timestamp: new Date().toISOString()
+    });
+  }
+}
+
+// Update module exports to include the handler
+module.exports = {
+  crawlAndAnalyzeSite,
+  analyzePage,
+  normalizeUrl,
+  handleSeoAnalyze
+};

@@ -1,0 +1,17 @@
+{
+  "version": "2.1.1",
+  "deploymentTimestamp": "2025-05-22T05:47:00.000Z",
+  "features": [
+    "basic-seo-analyze",
+    "enhanced-seo-analyze", 
+    "schema-analyze",
+    "mobile-analyze",
+    "site-crawl"
+  ],
+  "dependencies": [
+    "normalize-url",
+    "cheerio",
+    "puppeteer",
+    "axios"
+  ]
+}

@@ -4,7 +4,7 @@ const normalizeUrl = require('normalize-url');
 
 // Import handlers for different endpoints
 const handleHealthCheck = require('./health');
-const handleSeoAnalyze = require('./site-audit');
+const { handleSeoAnalyze } = require('./site-audit');
 const handleSiteAudit = require('./enhanced-site-audit');
 const handleEnhancedSiteCrawl = require('./enhanced-site-crawl');
 
