@@ -15,6 +15,8 @@ function normalizeUrl(url) {
   return normalized;
 }
 
+// FORCE REBUILD - Version 2.2.0
+
 // Import handlers for different endpoints
 const handleHealthCheck = require('./health');
 const { handleSeoAnalyze } = require('./site-audit');
