@@ -61,16 +61,31 @@ function releaseRequest() {
 }
 
 // CORS headers helper
-function addCorsHeaders(res) {
+function addCorsHeaders(res, req) {
   const corsOrigins = process.env.CORS_ORIGIN ? 
     process.env.CORS_ORIGIN.split(',') : 
-    ['https://audit.mardenseo.com', 'http://localhost:9090'];
+    [
+      'https://audit.mardenseo.com',
+      'https://glittering-granita-92b678.netlify.app',
+      'http://localhost:9090'
+    ];
   
-  const origin = corsOrigins[0]; // Default to first in the list
+  // Get the request origin
+  const requestOrigin = req.headers.origin;
   
-  res.setHeader('Access-Control-Allow-Origin', origin);
+  // Check if the request origin is in our allowed list
+  const allowedOrigin = corsOrigins.find(origin => 
+    origin.trim() === requestOrigin || 
+    origin.trim() === '*'
+  );
+  
+  // Set the appropriate origin
+  const originToSet = allowedOrigin || corsOrigins[0];
+  
+  res.setHeader('Access-Control-Allow-Origin', originToSet);
   res.setHeader('Access-Control-Allow-Methods', 'GET, POST, OPTIONS');
   res.setHeader('Access-Control-Allow-Headers', 'Content-Type, Authorization');
+  res.setHeader('Access-Control-Allow-Credentials', 'true');
 }
 
 // Add routes for enhanced tools
@@ -81,12 +96,12 @@ module.exports = async (req, res) => {
   try {
     // Add CORS headers for preflight requests
     if (req.method === 'OPTIONS') {
-      addCorsHeaders(res);
+      addCorsHeaders(res, req);
       return res.status(200).end();
     }
     
     // Add CORS headers to all responses
-    addCorsHeaders(res);
+    addCorsHeaders(res, req);
     
     // Process URL and path
     let url = req.url;
