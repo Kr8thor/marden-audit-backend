@@ -1,10 +1,23 @@
 // Import necessary modules
 const fetch = require('node-fetch');
-const normalizeUrl = require('normalize-url');
 const redis = require('./lib/redis.optimized');
 const mobileFriendlyMarden = require('./mobile-friendly-marden');
 const schemaValidatorMarden = require('./schema-validator-marden');
 const crawl4aiMarden = require('./crawl4ai-marden');
+
+// Simple URL normalization function
+function normalizeUrl(url) {
+  if (!url) return '';
+  
+  let normalized = url.trim();
+  
+  // Ensure proper protocol
+  if (!normalized.startsWith('http://') && !normalized.startsWith('https://')) {
+    normalized = `https://${normalized}`;
+  }
+  
+  return normalized;
+}
 
 /**
  * Handle enhanced SEO analysis endpoint
