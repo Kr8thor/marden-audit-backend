@@ -1,6 +1,19 @@
 // Import required dependencies
 const redis = require('./lib/redis.optimized');
-const normalizeUrl = require('normalize-url');
+
+// Simple URL normalization function
+function normalizeUrl(url) {
+  if (!url) return '';
+  
+  let normalized = url.trim();
+  
+  // Ensure proper protocol
+  if (!normalized.startsWith('http://') && !normalized.startsWith('https://')) {
+    normalized = `https://${normalized}`;
+  }
+  
+  return normalized;
+}
 
 // Import handlers for different endpoints
 const handleHealthCheck = require('./health');
