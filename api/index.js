@@ -135,9 +135,10 @@ module.exports = async (req, res) => {
         else if (path === '/site-crawl' || path === '/api/site-crawl') {
           await handleEnhancedSiteCrawl(req, res);
         }
-        // Enhanced SEO analyze endpoint (new)
+        // Enhanced SEO analyze endpoint (new) - Route to basic analysis for now
         else if (path === '/enhanced-seo-analyze' || path === '/api/enhanced-seo-analyze') {
-          await enhancedToolsRouter.handle(req, res);
+          // For now, route to the working basic analysis
+          await handleSeoAnalyze(req, res);
         }
         // Schema analysis endpoint (new)
         else if (path === '/schema-analyze' || path === '/api/schema-analyze') {
