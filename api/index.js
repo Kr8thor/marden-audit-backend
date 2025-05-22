@@ -21,7 +21,9 @@ function normalizeUrl(url) {
 const handleHealthCheck = require('./health');
 const { handleSeoAnalyze } = require('./site-audit');
 const handleSiteAudit = require('./enhanced-site-audit');
-const handleEnhancedSiteCrawl = require('./enhanced-site-crawl');
+const handleWorkingSiteCrawl = require('./working-site-crawler');
+const { performSeoAnalysis } = require('./enhanced-analysis-engine');
+const { handleEnhancedSeoAnalyze } = require('./enhanced-seo-handler');
 
 // Setup concurrency control
 let activeRequests = 0;
@@ -141,24 +143,15 @@ module.exports = async (req, res) => {
       try {
         // Route to appropriate handler based on path
         if (path === '/seo-analyze' || path === '/api/seo-analyze') {
-          await handleSeoAnalyze(req, res);
+          await handleEnhancedSeoAnalyze(req, res);
         }
         // Alias 'basic-audit' endpoint to 'seo-analyze'
         else if (path === '/basic-audit' || path === '/api/basic-audit') {
-          await handleSeoAnalyze(req, res);
+          await handleEnhancedSeoAnalyze(req, res);
         }
-        // Site audit endpoint
-        else if (path === '/site-audit' || path === '/api/site-audit') {
-          await handleSiteAudit(req, res);
-        }
-        // Site crawl endpoint
-        else if (path === '/site-crawl' || path === '/api/site-crawl') {
-          await handleEnhancedSiteCrawl(req, res);
-        }
-        // Enhanced SEO analyze endpoint (new) - Route to basic analysis for now
+        // Enhanced SEO analyze endpoint - Same as main endpoint now
         else if (path === '/enhanced-seo-analyze' || path === '/api/enhanced-seo-analyze') {
-          // For now, route to the working basic analysis
-          await handleSeoAnalyze(req, res);
+          await handleEnhancedSeoAnalyze(req, res);
         }
         // Schema analysis endpoint (new)
         else if (path === '/schema-analyze' || path === '/api/schema-analyze') {
