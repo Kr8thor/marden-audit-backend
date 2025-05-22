@@ -48,8 +48,9 @@ const corsOrigins = process.env.CORS_ORIGIN ?
 console.log('CORS origins:', corsOrigins);
 
 // Add middleware
+// More permissive CORS configuration for testing
 app.use(cors({
-  origin: corsOrigins,
+  origin: true, // Allow all origins for now
   methods: ['GET', 'POST', 'OPTIONS', 'HEAD'],
   allowedHeaders: ['Content-Type', 'Authorization', 'Accept', 'Origin', 'X-Requested-With'],
   credentials: false,
@@ -59,7 +60,8 @@ app.use(cors({
 
 // Additional CORS handling for all routes
 app.use((req, res, next) => {
-  res.header('Access-Control-Allow-Origin', req.headers.origin || '*');
+  const origin = req.headers.origin || '*';
+  res.header('Access-Control-Allow-Origin', origin);
   res.header('Access-Control-Allow-Methods', 'GET,POST,OPTIONS,HEAD');
   res.header('Access-Control-Allow-Headers', 'Content-Type,Authorization,Accept,Origin,X-Requested-With');
   res.header('Access-Control-Max-Age', '86400');
