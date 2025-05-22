@@ -84,6 +84,18 @@ const enhancedToolsRouter = require('./enhanced-tools-marden');
 
 // Export the handler
 module.exports = async (req, res) => {
+  // Add CORS headers immediately for all requests
+  const origin = req.headers.origin || '*';
+  res.header('Access-Control-Allow-Origin', origin);
+  res.header('Access-Control-Allow-Methods', 'GET,POST,OPTIONS,HEAD');
+  res.header('Access-Control-Allow-Headers', 'Content-Type,Authorization,Accept,Origin,X-Requested-With');
+  res.header('Access-Control-Max-Age', '86400');
+  
+  // Handle preflight requests
+  if (req.method === 'OPTIONS') {
+    console.log(`OPTIONS request from origin: ${origin}`);
+    return res.status(200).end();
+  }
   try {
     // BULLETPROOF CORS FIX - Set headers IMMEDIATELY
     res.setHeader('Access-Control-Allow-Origin', '*');
