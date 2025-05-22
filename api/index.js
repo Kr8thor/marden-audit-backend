@@ -60,44 +60,21 @@ function releaseRequest() {
   }
 }
 
-// CORS headers helper
+// CORS headers helper - TEMPORARY PERMISSIVE FOR DEBUGGING
 function addCorsHeaders(res, req) {
-  const corsOrigins = process.env.CORS_ORIGIN ? 
-    process.env.CORS_ORIGIN.split(',') : 
-    [
-      'https://audit.mardenseo.com',
-      'https://glittering-granita-92b678.netlify.app',
-      'https://melodious-narwhal-fc00c0.netlify.app',
-      'http://localhost:9090',
-      'http://localhost:3000'
-    ];
-  
-  // Get the request origin
+  // Temporarily allow all origins for debugging
   const requestOrigin = req.headers.origin;
   
   console.log('🔍 CORS Debug - Request Origin:', requestOrigin);
-  console.log('🔍 CORS Debug - Allowed Origins:', corsOrigins);
   
-  // Check if the request origin is in our allowed list
-  let allowedOrigin = corsOrigins.find(origin => 
-    origin.trim() === requestOrigin
-  );
-  
-  // If no specific match found, use wildcard for now to debug
-  if (!allowedOrigin && requestOrigin) {
-    console.log('⚠️ CORS Debug - Origin not in whitelist, allowing anyway for debugging');
-    allowedOrigin = requestOrigin;
-  }
-  
-  // Set the appropriate origin
-  const originToSet = allowedOrigin || corsOrigins[0];
-  
-  console.log('✅ CORS Debug - Setting Origin to:', originToSet);
-  
-  res.setHeader('Access-Control-Allow-Origin', originToSet);
-  res.setHeader('Access-Control-Allow-Methods', 'GET, POST, OPTIONS');
-  res.setHeader('Access-Control-Allow-Headers', 'Content-Type, Authorization, Accept, Origin');
+  // Set CORS headers to allow the request origin
+  res.setHeader('Access-Control-Allow-Origin', requestOrigin || '*');
+  res.setHeader('Access-Control-Allow-Methods', 'GET, POST, OPTIONS, PUT, DELETE');
+  res.setHeader('Access-Control-Allow-Headers', 'Content-Type, Authorization, Accept, Origin, X-Requested-With');
   res.setHeader('Access-Control-Allow-Credentials', 'false');
+  res.setHeader('Access-Control-Max-Age', '86400');
+  
+  console.log('✅ CORS Debug - Setting Origin to:', requestOrigin || '*');
 }
 
 // Add routes for enhanced tools
