@@ -6,7 +6,7 @@
 // Import required dependencies
 const puppeteer = require('puppeteer');
 const cheerio = require('cheerio');
-const normalizeUrl = require('normalize-url');
+// Simple URL normalization function`nfunction normalizeUrl(url) {`n  if (!url) return '';`n  let normalized = url.trim();`n  if (!normalized.startsWith('http://') && !normalized.startsWith('https://')) {`n    normalized = `https://${normalized}`;`n  }`n  return normalized;`n}
 const { URL } = require('url');
 const redis = require('./lib/redis.optimized');
 
