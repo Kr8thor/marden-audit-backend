@@ -24,6 +24,7 @@ const handleSiteAudit = require('./enhanced-site-audit');
 const handleWorkingSiteCrawl = require('./working-site-crawler');
 const { performSeoAnalysis } = require('./enhanced-analysis-engine');
 const { handleEnhancedSeoAnalyze } = require('./enhanced-seo-handler');
+const { handleFullSiteCrawl } = require('./full-site-crawler');
 
 // Setup concurrency control
 let activeRequests = 0;
@@ -132,7 +133,8 @@ module.exports = async (req, res) => {
           '/basic-audit',
           '/enhanced-seo-analyze', // New enhanced endpoint
           '/schema-analyze',        // New schema analysis endpoint
-          '/mobile-analyze'         // New mobile analysis endpoint
+          '/mobile-analyze',        // New mobile analysis endpoint
+          '/full-site-crawl'        // AMAZING full site crawling!
         ],
         documentation: 'https://github.com/Kr8thor/marden-audit-backend'
       });
@@ -300,6 +302,10 @@ module.exports = async (req, res) => {
             timestamp: new Date().toISOString(),
             data: result
           });
+        }
+        // Full site crawl endpoint (AMAZING FUNCTIONALITY!)
+        else if (path === '/full-site-crawl' || path === '/api/full-site-crawl') {
+          await handleFullSiteCrawl(req, res);
         }
         else {
           // Unknown endpoint
