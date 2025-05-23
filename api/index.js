@@ -24,7 +24,7 @@ const handleSiteAudit = require('./enhanced-site-audit');
 const handleWorkingSiteCrawl = require('./working-site-crawler');
 const { performSeoAnalysis } = require('./enhanced-analysis-engine');
 const { handleEnhancedSeoAnalyze } = require('./enhanced-seo-handler');
-const { handleFullSiteCrawl } = require('./full-site-crawler');
+const { handleFullSiteCrawl } = require('./simple-full-crawler');
 
 // Setup concurrency control
 let activeRequests = 0;
